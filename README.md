@@ -10,39 +10,36 @@
 
 两种模式同一个界面、同一套序列化规则（`static/md.js`），写出的 MD 完全一致。
 
-## 发布到 GitHub Pages（一次性操作）
+## 分支结构与 GitHub Pages
+
+| 分支 | 内容 | 用途 |
+| --- | --- | --- |
+| `main` | 完整项目（前端 + editor.py 后端 + 文档） | 日常开发 |
+| `website` | 仅 `index.html` + `static/` | GitHub Pages 部署源 |
+
+**启用 Pages（一次性）**：仓库 **Settings → Pages → Build and deployment → Source**
+选 **Deploy from a branch**，分支 `website`、目录 `/ (root)`，保存。约 1 分钟后生效：
+
+```
+https://openqgis.github.io/atlas-core-assistant/
+```
+
+**更新线上站点**：改完 `main` 上的前端后，Windows 双击 `sync-site.bat`（等价命令：
 
 ```bash
-cd atlas-core-assistant
-git init && git add -A && git commit -m "AtlasCore 标注编辑器"
-# 在 GitHub 上新建仓库（建议名 atlas-core-assistant，Public），然后：
-git remote add origin https://github.com/<你的用户名>/atlas-core-assistant.git
-git branch -M main
-git push -u origin main
+git checkout website
+git checkout main -- index.html static
+git commit -am "sync: 从 main 同步静态站点"
+git push origin website
+git checkout main
 ```
 
-再到仓库 **Settings → Pages → Build and deployment → Source** 二选一：
+> 为什么不用 Actions 自动部署：部分账号默认 Workflow 权限不允许 GITHUB_TOKEN
+> 自动创建 Pages 站点（`configure-pages` 会失败），分支部署不依赖 Actions，最稳。
 
-- **GitHub Actions**（推荐）：保存后到 Actions 页面把 `Deploy to GitHub Pages` 工作流
-  Re-run 一次（或随便 push 一个提交），之后每次 push 自动部署；
-- **Deploy from a branch**：分支 `main`、目录 `/ (root)`，保存即生效，不需要 Actions
-  （此时可删除 `.github/workflows/pages.yml` 避免工作流报错）。
-
-> 若工作流在 `actions/configure-pages` 一步失败（部分账号默认 Workflow 权限较严，
-> GITHUB_TOKEN 无法自动创建 Pages 站点），按上面任一方式手动选择 Source 即可解决——
-> 这是整个流程唯一需要手动的步骤。
-
-保存后 1–2 分钟生效，地址为：
-
-```
-https://<你的用户名>.github.io/atlas-core-assistant/
-```
-
-使用时打开这个网址，点「📂 连接文件夹」，选择本地 atlas-core 的 **pic 文件夹**
+使用时打开上面网址，点「📂 连接文件夹」，选择本地 atlas-core 的 **pic 文件夹**
 （选 atlas-core 根目录也可以，会自动识别 `pic/`）。浏览器会记住授权，
 下次打开点一下「连接文件夹」即可恢复。
-
-> 注意：`config.json` 里只有本机路径，不含任何密钥，可安全公开。
 
 ## 本地服务模式
 
