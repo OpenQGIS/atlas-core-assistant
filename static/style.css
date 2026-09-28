@@ -70,6 +70,7 @@
   --scroll-hover: #33445a;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }  /* 防止类的 display 规则盖掉 hidden 属性 */
 html, body { height: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
