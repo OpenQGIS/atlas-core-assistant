@@ -63,6 +63,22 @@ function toast(msg, type = '') {
   el._t = setTimeout(() => { el.hidden = true; }, 2600);
 }
 
+/* ---------- 主题（浅色默认，可切换） ---------- */
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('atlas_theme', t); } catch (_) { }
+  const btn = $('#btnTheme');
+  if (btn) btn.textContent = t === 'dark' ? '☀ 亮色' : '🌙 深色';
+}
+
+function bindTheme() {
+  applyTheme((() => {
+    try { return localStorage.getItem('atlas_theme') || 'light'; } catch (_) { return 'light'; }
+  })());
+  $('#btnTheme').onclick = () =>
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+}
+
 /* ================= 适配器：本地服务 / GitHub Pages 文件夹 双模式 ================= */
 
 let adapter = null;
@@ -136,6 +152,7 @@ async function detectAdapter() {
 /* ================= 初始化 ================= */
 
 async function init() {
+  bindTheme();
   renderStageTabs();
   bindGlobalEvents();
   bindFormEvents();
