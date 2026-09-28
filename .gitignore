@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+
+# 运行缓存（缩略图/瓦片，可随时删）
+.cache/
+
+# 系统杂项
+.DS_Store
+Thumbs.db
