@@ -21,7 +21,17 @@ git branch -M main
 git push -u origin main
 ```
 
-再到仓库 **Settings → Pages → Source** 选 `Deploy from branch`，分支 `main`、目录 `/ (root)`，
+再到仓库 **Settings → Pages → Build and deployment → Source** 二选一：
+
+- **GitHub Actions**（推荐）：保存后到 Actions 页面把 `Deploy to GitHub Pages` 工作流
+  Re-run 一次（或随便 push 一个提交），之后每次 push 自动部署；
+- **Deploy from a branch**：分支 `main`、目录 `/ (root)`，保存即生效，不需要 Actions
+  （此时可删除 `.github/workflows/pages.yml` 避免工作流报错）。
+
+> 若工作流在 `actions/configure-pages` 一步失败（部分账号默认 Workflow 权限较严，
+> GITHUB_TOKEN 无法自动创建 Pages 站点），按上面任一方式手动选择 Source 即可解决——
+> 这是整个流程唯一需要手动的步骤。
+
 保存后 1–2 分钟生效，地址为：
 
 ```
