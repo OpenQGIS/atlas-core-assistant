@@ -85,14 +85,19 @@ window.FSAdapter = (() => {
       for (const st of STAGES) {
         try { await base.getDirectoryHandle(st); found = true; break; } catch (_) { }
       }
-      if (!found) throw new Error('所选目录下未找到 01_pending / 02_waiting / 03_published');
+      if (!found) {
+        throw new Error(STAGES.includes(h.name)
+          ? `选中的「${h.name}」是流水线子文件夹，请改为选择它的上一级 pic 文件夹`
+          : `「${h.name}」下没有 01_pending / 02_waiting / 03_published，请选择 atlas-core 的 pic 文件夹（或包含 pic 的根目录）`);
+      }
       this.picRoot = base;
       this.label = h.name + (base !== h ? '/pic' : '');
     },
 
     async stageDir(stage) {
       if (!this.picRoot) throw new Error('未连接文件夹');
-      return await this.picRoot.getDirectoryHandle(stage);
+      return await this.picRoot.getDirectoryHandle(stage)
+        .catch(() => { throw new Error(`已连接的「${this.label}」里没有 ${stage} 文件夹`); });
     },
 
     async dirFromPath(parts, base) {
@@ -111,9 +116,8 @@ window.FSAdapter = (() => {
 
     // ---------- 与 ServerAdapter 相同的接口 ----------
     async listStage(stage) {
-      let stageDir;
-      try { stageDir = await this.stageDir(stage); }
-      catch (_) { return []; }
+      if (!this.picRoot) return [];  // 尚未连接（遮罩层下点页签，无需报错）
+      const stageDir = await this.stageDir(stage);  // 缺目录会抛出明确错误
       const items = [];
       const walk = async (dir, sub) => {
         const stems = new Map(); // stem -> entry

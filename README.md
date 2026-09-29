@@ -37,9 +37,9 @@ git checkout main
 > 为什么不用 Actions 自动部署：部分账号默认 Workflow 权限不允许 GITHUB_TOKEN
 > 自动创建 Pages 站点（`configure-pages` 会失败），分支部署不依赖 Actions，最稳。
 
-使用时打开上面网址，点「📂 连接文件夹」，选择本地 atlas-core 的 **pic 文件夹**
-（选 atlas-core 根目录也可以，会自动识别 `pic/`）。浏览器会记住授权，
-下次打开点一下「连接文件夹」即可恢复。
+使用时打开上面网址，点「📂 连接文件夹」，选择本地 atlas-core 的 **pic 文件夹本身**
+（注意不要选 `02_waiting` 等流水线子文件夹；选 atlas-core 根目录也可以，会自动识别
+`pic/`）。浏览器会记住授权，下次打开点一下「连接文件夹」即可恢复。
 
 ## 本地服务模式
 
@@ -71,6 +71,7 @@ URL 加 `?mode=fs` 可强制体验文件夹模式，`?mode=server` 强制本地�
 | 目录树导航 | 侧栏按多级文件夹渲染成目录树（展开/收起、数量统计），展开状态按阶段记忆；筛选时自动切为扁平列表 |
 | 深焦查看 | Pages 模式：浏览器内位图金字塔；本地模式：服务端 256px 瓦片金字塔按需加载（与网站端 DZI 同源），14881px 超长图 100%+ 依然锐利 |
 | 三池浏览 | 01_pending / 02_waiting / 03_published 任意切换，支持二级文件夹，按名称/id/标题筛选 |
+| 状态标记 | `status` 字段（pending / waiting / published）随图片所在池自动写入 MD，表单只读显示，杜绝与实际位置不一致 |
 | 表单编辑 | frontmatter 全部字段表单化：文本、日期、分类级联、标签 chips、色板取色器、工序滑杆 |
 | 预设体系 | subCategory / topic 按《Gallery标签分类逻辑.md》级联联动；tags 五维预设一键填入 |
 | 自动读取 | 像素尺寸、DPI（PNG pHYs / JPEG JFIF，纯 JS 解析）、EXIF 拍摄时间、文件时间；physicalSize 按 `px ÷ DPI × 2.54` 自动计算并推荐构图后缀 |

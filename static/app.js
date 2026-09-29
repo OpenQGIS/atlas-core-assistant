@@ -27,6 +27,13 @@ const STAGES = [
   ['03_published', '成品库'],
 ];
 
+// 图片/MD 所在流水线池 → status 字段与显示名（状态由文件夹位置唯一决定）
+function stageInfoOf(rel) {
+  const key = String(rel || '').split('/')[0];
+  const found = STAGES.find(([k]) => k === key);
+  return { key, status: MD.STAGE_STATUS[key] || '', label: found ? found[1] : key };
+}
+
 /* ================= 状态 ================= */
 
 const state = {
@@ -41,6 +48,22 @@ const state = {
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
+
+/* ---------- 图标（Keyline Icons · sharp · MIT，https://keylineicons.com） ---------- */
+const ICONS = {
+  folder: '<path d="M3 7C3 5.3431 4.3431 4 6 4L8.6716 4C9.202 4 9.7107 4.2107 10.0858 4.5858L11.4142 5.9142C11.7893 6.2893 12.298 6.5 12.8284 6.5L18 6.5C19.6569 6.5 21 7.8431 21 9.5L21 17C21 18.6569 19.6569 20 18 20L6 20C4.3431 20 3 18.6569 3 17Z"/>',
+  'folder-open': '<path d="M6 15L7.4472 12.1056C7.786 11.428 8.4785 11 9.2361 11L19.9978 11C21.4451 11 22.4132 12.4897 21.8254 13.8123L19.6032 18.8123C19.2822 19.5345 18.5659 20 17.7756 20L4 20C2.8954 20 2 19.1046 2 18L2 6C2 4.8954 2.8954 4 4 4L7.3787 4C7.7765 4 8.158 4.158 8.4393 4.4393L9.5607 5.5607C9.842 5.842 10.2235 6 10.6213 6L17 6C18.1046 6 19 6.8954 19 8L19 11"/>',
+  'chevron-right': '<path d="M9 6L15 12L9 18"/>',
+  'chevron-down': '<path d="M6 9L12 15L18 9"/>',
+  link: '<path d="M8.1883 18.4383C7.5084 19.1181 6.5864 19.5 5.625 19.5C4.6636 19.5 3.7416 19.1181 3.0617 18.4383C2.3819 17.7584 2 16.8364 2 15.875C2 14.9136 2.3819 13.9916 3.0617 13.3117L8.1867 8.1867C8.8666 7.5069 9.7886 7.125 10.75 7.125C11.7114 7.125 12.6334 7.5069 13.3133 8.1867C13.9931 8.8666 14.375 9.7886 14.375 10.75C14.375 11.7114 13.9931 12.6334 13.3133 13.3133M15.8117 5.5617C16.4916 4.8819 17.4136 4.5 18.375 4.5C19.3364 4.5 20.2584 4.8819 20.9383 5.5617C21.6181 6.2416 22 7.1636 22 8.125C22 9.0864 21.6181 10.0084 20.9383 10.6883L15.8133 15.8133C15.1334 16.4931 14.2114 16.875 13.25 16.875C12.2886 16.875 11.3666 16.4931 10.6867 15.8133C10.0069 15.1334 9.625 14.2114 9.625 13.25C9.625 12.2886 10.0069 11.3666 10.6867 10.6867"/>',
+  settings: '<path d="M13.5 4.8845C13.5 5.3482 13.8221 5.7434 14.2571 5.9041C14.4124 5.9615 14.5649 6.0247 14.7143 6.0933C15.1356 6.2869 15.6427 6.2353 15.9706 5.9076L16.5966 5.2819C16.9872 4.8916 17.6202 4.8917 18.0106 5.2821L18.7175 5.989C19.1081 6.3796 19.108 7.0129 18.7173 7.4034L18.0922 8.0283C17.7641 8.3562 17.7124 8.8636 17.9062 9.2851C17.975 9.4347 18.0383 9.5874 18.0958 9.7429C18.2566 10.1779 18.6518 10.5 19.1155 10.5L20 10.5C20.5523 10.5 21 10.9477 21 11.5L21 12.5C21 13.0523 20.5523 13.5 20 13.5L19.1155 13.5C18.6518 13.5 18.2566 13.8221 18.0956 14.257C18.0381 14.4123 17.9749 14.5648 17.9061 14.7143C17.7123 15.1355 17.7639 15.6428 18.0918 15.9707L18.7177 16.5966C19.1082 16.9871 19.1082 17.6203 18.7177 18.0108L18.0108 18.7177C17.6203 19.1082 16.9871 19.1082 16.5966 18.7177L15.9707 18.0918C15.6428 17.7639 15.1355 17.7123 14.7141 17.9058C14.5647 17.9745 14.4123 18.0376 14.2571 18.0949C13.8221 18.2556 13.5 18.6508 13.5 19.1145L13.5 20C13.5 20.5523 13.0523 21 12.5 21L11.5 21C10.9477 21 10.5 20.5523 10.5 20L10.5 19.1145C10.5 18.6508 10.1779 18.2556 9.7429 18.0951C9.5874 18.0377 9.4348 17.9746 9.2852 17.9059C8.8636 17.7124 8.3562 17.7641 8.0283 18.0922L7.4034 18.7173C7.0129 19.108 6.3796 19.1081 5.989 18.7175L5.2821 18.0106C4.8917 17.6202 4.8916 16.9872 5.2819 16.5966L5.9076 15.9706C6.2353 15.6427 6.2869 15.1356 6.0933 14.7143C6.0247 14.5649 5.9615 14.4124 5.9041 14.2571C5.7434 13.8221 5.3482 13.5 4.8845 13.5L4 13.5C3.4477 13.5 3 13.0523 3 12.5L3 11.5C3 10.9477 3.4477 10.5 4 10.5L4.8845 10.5C5.3482 10.5 5.7434 10.1779 5.904 9.7429C5.9614 9.5874 6.0245 9.4346 6.0933 9.285C6.2867 8.8635 6.2351 8.3562 5.9072 8.0283L5.2823 7.4034C4.8918 7.0129 4.8918 6.3797 5.2823 5.9892L5.9892 5.2823C6.3797 4.8918 7.0129 4.8918 7.4034 5.2823L8.0283 5.9072C8.3562 6.2351 8.8635 6.2867 9.285 6.0933C9.4346 6.0245 9.5874 5.9614 9.7429 5.904C10.1779 5.7434 10.5 5.3482 10.5 4.8845L10.5 4C10.5 3.4477 10.9477 3 11.5 3L12.5 3C13.0523 3 13.5 3.4477 13.5 4L13.5 4.8845ZM12 9.5C13.3807 9.5 14.5 10.6193 14.5 12C14.5 13.3807 13.3807 14.5 12 14.5C10.6193 14.5 9.5 13.3807 9.5 12C9.5 10.6193 10.6193 9.5 12 9.5Z"/>',
+  sun: '<path d="M16.5 12C16.5 14.4854 14.4854 16.5 12 16.5C9.5147 16.5 7.5 14.4854 7.5 12C7.5 9.5147 9.5147 7.5 12 7.5C14.4854 7.5 16.5 9.5147 16.5 12ZM20.5 12L22 12M18.0104 18.0104L19.0711 19.0711M12 20.5L12 22M5.9896 18.0104L4.9289 19.0711M3.5 12L2 12M5.9896 5.9896L4.9289 4.9289M12 3.5L12 2M18.0104 5.9896L19.0711 4.9289"/>',
+  moon: '<path d="M21 12C21 16.9706 16.9706 21 12 21C7.0294 21 3 16.9706 3 12C3 7.0294 7.0294 3 12 3C9.9618 5.5477 10.1652 9.2206 12.4723 11.5277C14.7794 13.8348 18.4523 14.0382 21 12Z"/>',
+  image: '<path d="M6 3L18 3C19.6569 3 21 4.3431 21 6L21 18C21 19.6569 19.6569 21 18 21L6 21C4.3431 21 3 19.6569 3 18L3 6C3 4.3431 4.3431 3 6 3ZM3 18L7.9393 13.0607C8.5251 12.4749 9.4749 12.4749 10.0607 13.0607L12.0801 15.0801C12.6079 15.6079 13.4436 15.6673 14.0408 15.2194L15.9592 13.7806C16.5564 13.3327 17.3921 13.3921 17.9199 13.9199L21 17"/><path d="M9.5 7.5C9.5 8.3284 8.8284 9 8 9C7.1716 9 6.5 8.3284 6.5 7.5C6.5 6.6716 7.1716 6 8 6C8.8284 6 9.5 6.6716 9.5 7.5Z" fill="currentColor" stroke="none"/>',
+  'arrow-up': '<path d="M5 11.8771L11.5875 5.17385C11.8153 4.94205 12.1847 4.94205 12.4125 5.17385L19 11.8771M12 19V5.94129"/>',
+};
+const icon = (name, size = 14) =>
+  `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
 /* ================= API ================= */
 
@@ -68,7 +91,7 @@ function applyTheme(t) {
   document.documentElement.dataset.theme = t;
   try { localStorage.setItem('atlas_theme', t); } catch (_) { }
   const btn = $('#btnTheme');
-  if (btn) btn.textContent = t === 'dark' ? '☀ 亮色' : '🌙 深色';
+  if (btn) btn.innerHTML = t === 'dark' ? `${icon('sun')} 亮色` : `${icon('moon')} 深色`;
 }
 
 function bindTheme() {
@@ -152,6 +175,10 @@ async function detectAdapter() {
 /* ================= 初始化 ================= */
 
 async function init() {
+  // 给带 data-icon 的静态元素注入 SVG 图标
+  $$('[data-icon]').forEach(el => {
+    el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon, +(el.dataset.iconSize || 14)));
+  });
   bindTheme();
   renderStageTabs();
   bindGlobalEvents();
@@ -234,6 +261,9 @@ async function loadStage(stage) {
   try {
     state.items = await adapter.listStage(stage);
     renderList();
+    if (adapter.mode === 'fs' && adapter.connected && !state.items.length) {
+      toast(`「${FSAdapter.label}/${stage}」里没有图片（支持 png/jpg/jpeg/webp/tif/tiff/bmp）`);
+    }
   } catch (e) {
     state.items = [];
     renderList();
@@ -312,7 +342,7 @@ function renderTreeNode(node, depth, box) {
     const head = document.createElement('div');
     head.className = 'tree-folder' + (open ? ' open' : '');
     head.style.setProperty('--depth', depth);
-    head.innerHTML = `<span class="caret">▶</span><span class="ficon">📁</span><span>${esc(dir.name)}</span><span class="fcount">${countUnder(dir)}</span>`;
+    head.innerHTML = `<span class="caret">${icon('chevron-right', 12)}</span><span class="ficon">${icon('folder', 14)}</span><span>${esc(dir.name)}</span><span class="fcount">${countUnder(dir)}</span>`;
     head.onclick = () => {
       if (state.expanded.has(dir.path)) state.expanded.delete(dir.path);
       else state.expanded.add(dir.path);
@@ -389,7 +419,11 @@ function ensureOsd() {
     visibilityRatio: 0.5,
     gestureSettingsMouse: { dblClickToZoom: false },
   });
-  osdViewer.addHandler('tile-drawn', hideUnderlaySoon);
+  osdViewer.addHandler('tile-drawn', () => { hideUnderlaySoon(); $('#imgLoading').hidden = true; });
+  osdViewer.addHandler('open-failed', () => {
+    $('#imgLoading').hidden = true;
+    toast('原图解码失败：文件过大或浏览器不支持该格式', 'err');
+  });
   osdViewer.addHandler('canvas-press', hideUnderlay);
   osdViewer.addHandler('canvas-scroll', hideUnderlay);
   osdViewer.addHandler('canvas-double-click', e => {
@@ -430,10 +464,12 @@ function zoom100() {
 
 async function loadViewer(imageRel, info) {
   const img = $('#mainImg');
+  const loading = $('#imgLoading');
   $('#viewerEmpty').style.display = imageRel ? 'none' : 'flex';
   if (!imageRel) {
     if (osdViewer) osdViewer.close();
     img.style.display = 'none';
+    loading.hidden = true;
     $('#zoomLevel').textContent = '';
     return;
   }
@@ -441,18 +477,25 @@ async function loadViewer(imageRel, info) {
   underlayHidden = false;
   img.style.display = 'block';
   img.style.opacity = '1';
-  try {
-    img.src = adapter.mode === 'fs'
-      ? await adapter.thumbUrl(imageRel)
-      : adapter.thumbUrl(imageRel, info);
-  } catch (_) { img.style.display = 'none'; }
+  const isFs = adapter.mode === 'fs';
+  if (isFs) {
+    loading.hidden = false;                       // 大图浏览器解码期间给出加载提示
+    img.onload = () => { loading.hidden = true; };  // 缩略图垫底就绪即隐藏提示
+  }
+  // 缩略图与原图解码并发，避免大图串行等待两轮
+  (async () => {
+    try {
+      img.src = isFs ? await adapter.thumbUrl(imageRel) : adapter.thumbUrl(imageRel, info);
+    } catch (_) { img.style.display = 'none'; }
+  })();
   const v = ensureOsd();
   try {
-    const ts = adapter.mode === 'fs'
+    const ts = isFs
       ? { type: 'image', url: await adapter.imageUrl(imageRel) }   // 位图金字塔（浏览器内解码）
       : await adapter.tileSource(imageRel, info);                 // 服务端瓦片金字塔
     v.open(ts);
   } catch (e) {
+    loading.hidden = true;
     toast('图片打开失败：' + e.message, 'err');
   }
   if (info) {
@@ -507,6 +550,8 @@ function fillForm() {
   if (state.current.isDraft) $('#draftName').textContent = state.current.mdRel.split('/').pop();
 
   const set = (id, v) => { $(id).value = v ?? ''; };
+  const si = stageInfoOf(state.current.mdRel || state.current.imageRel);
+  $('#f_status').value = si.status ? `${si.label}（${si.status}）` : si.key;
   set('#f_id', f.id); set('#f_title', f.title); set('#f_alt_name', f.alt_name);
   set('#f_author', f.author); set('#f_date', f.date); set('#f_year', f.year);
   $('#f_hero').checked = String(f.hero || 'no').toLowerCase() === 'yes';
@@ -526,7 +571,8 @@ function fillForm() {
   renderImgInfo(info);
 
   // 分类 chips
-  chipField('#subCatChips', splitMulti(f.subCategory), SUBCATS, v => renderTopicSuggest());
+  chipField('#subCatChips', splitMulti(f.subCategory), SUBCATS, () => { renderSubCatSuggest(); renderTopicSuggest(); });
+  renderSubCatSuggest();
   renderTopicSuggest();
   chipField('#topicChips', splitMulti(f.topic), allTopics(), null);
 
@@ -548,6 +594,7 @@ function fillForm() {
 
   clearDirty();
   setSaveMsg('', '');
+  refreshCombos();   // fillForm 重建 physComp 选项并赋值后，同步自定义下拉显示
 }
 
 function renderImgInfo(info) {
@@ -595,7 +642,8 @@ function updatePhysPreview() {
 function splitMulti(v) {
   if (Array.isArray(v)) return v.map(String);
   if (!v) return [];
-  return String(v).split(/[、,，]/).map(s => s.trim()).filter(Boolean);
+  // 通用分隔：、 ， , ； ;（含前后空格），如「工程制图、 空间形态；多图面排版」
+  return String(v).split(/[、，,;；]/).map(s => s.trim()).filter(Boolean);
 }
 
 function allTopics() {
@@ -634,6 +682,24 @@ function chipField(selector, values, suggestions, onchange) {
   root.appendChild(input);
   render();
   root._getList = () => list;
+  root._render = render;   // 供预设区外部改动列表后重渲染 chips
+}
+
+function renderSubCatSuggest() {
+  const box = $('#subCatSuggest');
+  const root = $('#subCatChips');
+  const cur = root._getList ? root._getList() : [];
+  box.innerHTML = `<div class="tag-group"><div class="gname">二级分类预设（五大类）</div><div class="gchips">${
+    SUBCATS.map(c => `<span class="sug-chip${cur.includes(c) ? ' used' : ''}" data-sub="${esc(c)}">${esc(c)}</span>`).join('')}</div></div>`;
+  box.querySelectorAll('[data-sub]').forEach(el => el.onclick = () => {
+    const v = el.dataset.sub;
+    const l = root._getList();
+    if (l.includes(v)) l.splice(l.indexOf(v), 1); else l.push(v);
+    root._render();
+    renderSubCatSuggest();
+    renderTopicSuggest();   // 专题候选池随所选分类联动
+    markDirty();
+  });
 }
 
 function renderTopicSuggest() {
@@ -696,31 +762,41 @@ function renderTagPresets() {
 
 function renderColors(colors) {
   const box = $('#colorList');
-  const list = [...(colors || [])];
-  while (list.length < 5) list.push('');
+  const list = [...(colors || [])];   // 数量不固定：3 / 5 / 6 个皆可，按需增删
   const render = () => {
     box.innerHTML = '';
     list.forEach((c, i) => {
-      const row = document.createElement('div');
-      row.className = 'color-row';
+      const chip = document.createElement('div');
+      chip.className = 'color-chip';
       const safe = /^#[0-9A-Fa-f]{6}$/.test(c) ? c : (c ? '#888888' : '#000000');
-      row.innerHTML = `
-        <span class="muted small">#${i + 1}</span>
-        <input type="color" value="${safe}" ${c ? '' : 'style="opacity:.35"'}>
+      chip.innerHTML = `
+        <input type="color" value="${safe}">
         <input type="text" class="hex" value="${esc(c)}" placeholder="#RRGGBB">
-        <div class="swatch-preview" style="background:${safe}"></div>`;
-      const colorInp = row.querySelector('input[type=color]');
-      const hexInp = row.querySelector('.hex');
-      const prev = row.querySelector('.swatch-preview');
-      colorInp.oninput = () => { hexInp.value = colorInp.value.toUpperCase(); prev.style.background = colorInp.value; list[i] = hexInp.value; markDirty(); };
+        <span class="cx" title="移除该色">×</span>`;
+      const colorInp = chip.querySelector('input[type=color]');
+      const hexInp = chip.querySelector('.hex');
+      colorInp.oninput = () => { hexInp.value = colorInp.value.toUpperCase(); list[i] = hexInp.value; markDirty(); };
       hexInp.oninput = () => {
         const v = hexInp.value.trim();
         list[i] = v;
-        if (/^#[0-9A-Fa-f]{6}$/.test(v)) { colorInp.value = v; prev.style.background = v; }
+        if (/^#[0-9A-Fa-f]{6}$/.test(v)) colorInp.value = v;
         markDirty();
       };
-      box.appendChild(row);
+      chip.querySelector('.cx').onclick = () => { list.splice(i, 1); render(); markDirty(); };
+      box.appendChild(chip);
     });
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn mini';
+    add.textContent = '+ 色';
+    add.title = '添加一个颜色';
+    add.onclick = () => {
+      list.push('');
+      render();
+      const last = box.querySelectorAll('.hex')[list.length - 1];
+      if (last) last.focus();
+    };
+    box.appendChild(add);
     box._getList = () => list.filter(Boolean);
   };
   render();
@@ -745,10 +821,15 @@ function renderWorkflow(wf) {
       const row = document.createElement('div');
       row.className = 'wf-row';
       row.innerHTML = `<span class="wname">${esc(k)}</span>
-        <input type="range" min="0" max="100" step="5" value="${vals[k]}">
-        <span class="wval">${vals[k]}%</span>`;
-      const rng = row.querySelector('input');
-      rng.oninput = () => { vals[k] = +rng.value; row.querySelector('.wval').textContent = rng.value + '%'; updateSum(); markDirty(); };
+        <input type="number" min="0" max="100" step="1" value="${vals[k]}">
+        <span class="unit">%</span>`;
+      const num = row.querySelector('input');
+      num.oninput = () => {
+        const v = parseInt(num.value, 10);
+        vals[k] = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
+        updateSum(); markDirty();
+      };
+      num.onchange = () => { num.value = vals[k]; };  // 失焦时把输入归位为合法值
       box.appendChild(row);
     });
     updateSum();
@@ -798,7 +879,7 @@ function renderVision(items) {
         <input type="text" class="vterm" placeholder="要点名（加粗词）" value="${esc(it.term)}">
         <textarea placeholder="描述…" rows="2">${esc(it.desc)}</textarea>
         <div class="vops">
-          <button class="btn ghost mini" data-op="up" title="上移">↑</button>
+          <button class="btn ghost mini" data-op="up" title="上移">${icon('arrow-up', 12)}</button>
           <button class="btn ghost mini" data-op="del" title="删除">×</button>
         </div>`;
       row.querySelector('.vterm').oninput = e => { it.term = e.target.value; markDirty(); };
@@ -832,6 +913,8 @@ function collectForm() {
   keep('author', $('#f_author').value.trim());
   keep('date', $('#f_date').value.trim());
   keep('year', $('#f_year').value.trim());
+  const stage = stageInfoOf(state.current.mdRel || state.current.imageRel);
+  if (stage.status) fields.status = stage.status;  // 始终以实际所在池为准，纠正过期值
   if ($('#physW').value && $('#physH').value) {
     fields.physicalSize = `${(+$('#physW').value).toFixed(1)}cm x ${(+$('#physH').value).toFixed(1)}cm，${$('#physComp').value}`;
   }
@@ -985,7 +1068,69 @@ function bindGlobalEvents() {
   });
 }
 
+/* ---------- 自定义下拉（原生 select 仅作数据载体，弹窗样式随主题） ---------- */
+
+function makeCombo(sel) {
+  const wrap = document.createElement('div');
+  wrap.className = 'combo';
+  sel.insertAdjacentElement('afterend', wrap);
+  sel.hidden = true;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'combo-btn';
+  btn.innerHTML = `<span class="combo-val"></span>${icon('chevron-down', 14)}`;
+  btn.setAttribute('aria-haspopup', 'listbox');
+  const pop = document.createElement('div');
+  pop.className = 'combo-pop';
+  pop.hidden = true;
+  pop.setAttribute('role', 'listbox');
+  wrap.append(btn, pop);
+
+  const refreshBtn = () => {
+    btn.querySelector('.combo-val').textContent = (sel.options[sel.selectedIndex] || {}).text || '';
+    btn.setAttribute('aria-expanded', String(!pop.hidden));
+  };
+  const buildOpts = () => {
+    pop.innerHTML = [...sel.options].map(o =>
+      `<div class="combo-opt${o.value === sel.value ? ' sel' : ''}" role="option" data-v="${esc(o.value)}">${esc(o.textContent)}</div>`).join('');
+    pop.querySelectorAll('.combo-opt').forEach(el => el.onclick = () => {
+      sel.value = el.dataset.v;
+      sel.dispatchEvent(new Event('input', { bubbles: true }));
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      close();
+    });
+  };
+  const open = () => { buildOpts(); pop.hidden = false; wrap.classList.add('open'); refreshBtn(); };
+  const close = () => { pop.hidden = true; wrap.classList.remove('open'); refreshBtn(); };
+
+  btn.onclick = e => { e.stopPropagation(); pop.hidden ? open() : close(); };
+  btn.onkeydown = e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (pop.hidden) { open(); return; }
+      const opts = [...pop.querySelectorAll('.combo-opt')];
+      const i = opts.findIndex(el => el.classList.contains('sel'));
+      const n = e.key === 'ArrowDown' ? Math.min(i + 1, opts.length - 1) : Math.max(i - 1, 0);
+      if (opts[n]) { sel.value = opts[n].dataset.v; buildOpts(); }
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      if (!pop.hidden) { e.preventDefault(); close(); sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    } else if (e.key === 'Escape' && !pop.hidden) {
+      close();
+    }
+  };
+  document.addEventListener('click', e => { if (!wrap.contains(e.target)) close(); });
+
+  sel._refreshCombo = refreshBtn;
+  refreshBtn();
+}
+
+function refreshCombos() {
+  $$('select').forEach(s => s._refreshCombo && s._refreshCombo());
+}
+
 function bindFormEvents() {
+  makeCombo($('#f_category'));
+  makeCombo($('#physComp'));
   $('#formScroll').addEventListener('input', e => {
     if (e.target.closest('#rawBox')) return;
     markDirty();
@@ -1021,7 +1166,7 @@ function bindFormEvents() {
       const colors = await adapter.getPalette(state.current.imageRel);
       renderColors(colors);
       markDirty();
-      toast('已提取 5 主色', 'ok');
+      toast(`已提取 ${colors.length} 主色`, 'ok');
     } catch (e) { toast(e.message, 'err'); }
   };
   $('#btnSave').onclick = save;

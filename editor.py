@@ -98,9 +98,10 @@ def resolve_rel(rel, root=None):
 
 # ---------------------------------------------------------------- MD 解析与序列化
 
-FIELD_ORDER = ['id', 'title', 'alt_name', 'author', 'date', 'year', 'physicalSize',
+FIELD_ORDER = ['id', 'title', 'status', 'alt_name', 'author', 'date', 'year', 'physicalSize',
                'category', 'categoryName', 'subCategory', 'topic', 'hero', 'image',
                'alias', 'tags', 'color', 'workflow']
+STAGE_STATUS = {'01_pending': 'pending', '02_waiting': 'waiting', '03_published': 'published'}
 LIST_FIELDS = {'alias', 'tags', 'color'}
 WORKFLOW_ORDER = ['QGIS', 'Ink', 'PS', 'GIMP', 'AI']
 QUOTED_ALWAYS = {'date', 'year', 'physicalSize'}
@@ -507,9 +508,12 @@ def build_draft(image_path):
         palette = []
     phys = f'{info["cmW"]:.1f}cm x {info["cmH"]:.1f}cm，{info["suggestedComposition"]}'
     draft_id = re.sub(r'[\s]+', '_', base)
+    norm = image_path.replace('\\', '/')
+    stage = next((s for s in STAGES if f'/{s}/' in norm), '')
     fields = {
         'id': draft_id,
         'title': base,
+        'status': STAGE_STATUS.get(stage, ''),
         'alt_name': base,
         'author': 'OpenQGIS',
         'date': today.strftime('%Y.%m.%d'),
