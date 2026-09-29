@@ -69,18 +69,18 @@
         <div class="section">
           <h3>基本信息</h3>
           <div class="grid2">
-            <label class="field"><span>id <i class="req">*</i></span><input id="f_id" type="text" placeholder="english_slug"></label>
-            <label class="field"><span>标题 title <i class="req">*</i></span><input id="f_title" type="text"></label>
-            <label class="field"><span>别名 alt_name</span><input id="f_alt_name" type="text"></label>
-            <label class="field"><span>作者 author</span><input id="f_author" type="text"></label>
-            <label class="field"><span>日期 date <i class="req">*</i></span>
+            <label class="field"><span><i class="fld">id</i> <i class="req">*</i></span><input id="f_id" type="text" placeholder="english_slug"></label>
+            <label class="field"><span>标题 <i class="fld">title</i> <i class="req">*</i></span><input id="f_title" type="text"></label>
+            <label class="field"><span>别名 <i class="fld">alt_name</i></span><input id="f_alt_name" type="text"></label>
+            <label class="field"><span>作者 <i class="fld">author</i></span><input id="f_author" type="text"></label>
+            <label class="field"><span>日期 <i class="fld">date</i> <i class="req">*</i></span>
               <input id="f_date" type="text" placeholder="2026.09.28">
               <span class="hint" id="dateHint"></span>
             </label>
-            <label class="field"><span>年份 year</span><input id="f_year" type="text" placeholder="自动生成"><span class="hint">按日期自动生成</span></label>
-        <label class="field"><span>状态 status</span><input id="f_status" type="text" readonly><span class="hint">随所在流水线池（01/02/03）自动写入，不可手改</span></label>
+            <label class="field"><span>年份 <i class="fld">year</i></span><input id="f_year" type="text" readonly><span class="hint">按日期自动推导，不可编辑</span></label>
+            <label class="field"><span>状态 <i class="fld">status</i></span><input id="f_status" type="text" readonly><span class="hint">随所在流水线池自动写入</span></label>
+            <label class="field inline-check"><input id="f_hero" type="checkbox"><span>首页门面大图（hero）</span></label>
           </div>
-          <label class="field inline-check"><input id="f_hero" type="checkbox"><span>首页门面大图（hero）</span></label>
         </div>
 
         <div class="section">
@@ -98,24 +98,24 @@
         <div class="section">
           <h3>分类体系</h3>
           <div class="grid2">
-            <label class="field"><span>根分类 category</span>
+            <label class="field"><span>根分类 <i class="fld">category</i></span>
               <select id="f_category">
                 <option value="original">原创图（original）</option>
                 <option value="gis">转发分享（gis）</option>
               </select>
             </label>
-            <label class="field"><span>categoryName</span><input id="f_categoryName" type="text" readonly></label>
+            <label class="field"><span><i class="fld">categoryName</i></span><input id="f_categoryName" type="text" readonly></label>
           </div>
-          <div class="field"><span>二级分类 subCategory（可多选）</span><div id="subCatChips" class="chips"></div></div>
+          <div class="field"><span>二级分类 <i class="fld">subCategory</i>（可多选）</span><div id="subCatChips" class="chips"></div></div>
           <div class="chips-suggest" id="subCatSuggest"></div>
-          <div class="field"><span>三级专题 topic（可多选）</span><div id="topicChips" class="chips"></div></div>
+          <div class="field"><span>三级专题 <i class="fld">topic</i>（可多选）</span><div id="topicChips" class="chips"></div></div>
           <div class="chips-suggest" id="topicSuggest"></div>
         </div>
 
         <div class="section">
           <h3>标签与别名</h3>
-          <div class="field"><span>别名 alias</span><div id="aliasChips" class="chips"></div></div>
-          <div class="field"><span>标签 tags（回车添加，点击下方预设快速填入）</span><div id="tagsChips" class="chips"></div></div>
+          <div class="field"><span>别名 <i class="fld">alias</i></span><div id="aliasChips" class="chips"></div></div>
+          <div class="field"><span>标签 <i class="fld">tags</i>（回车添加，点击下方预设快速填入）</span><div id="tagsChips" class="chips"></div></div>
           <details id="tagPresets" class="chips-suggest" open>
             <summary>标签预设（五维体系）</summary>
             <div id="tagPresetGroups"></div>
@@ -134,8 +134,8 @@
 
         <div class="section">
           <h3>正文 · 制图思路</h3>
-          <textarea id="f_intro" rows="5" placeholder="一段总述：画面主体、色调、构图逻辑…"></textarea>
-          <div class="sub-head">### 视觉语言与空间形态（动态要点）</div>
+          <textarea id="f_intro" rows="2" placeholder="一段总述：画面主体、色调、构图逻辑…"></textarea>
+          <div class="sub-head">视觉语言与空间形态 · 动态要点</div>
           <div id="visionList"></div>
           <button id="btnAddVision" class="btn mini">+ 添加要点</button>
         </div>
