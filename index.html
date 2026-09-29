@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AtlasCore 标注编辑器</title>
-<link rel="stylesheet" href="static/style.css?v=4">
+<link rel="stylesheet" href="static/style.css?v=5">
 </head>
 <body>
 
@@ -14,9 +14,9 @@
   <nav id="stageTabs"></nav>
   <div class="spacer"></div>
   <span id="connStatus" class="muted"></span>
-  <button id="btnConnect" class="btn ghost" hidden title="授权访问本地 pic 文件夹">📂 连接文件夹</button>
-  <button id="btnTheme" class="btn ghost" title="切换浅色 / 深色主题">🌙 深色</button>
-  <button id="btnSettings" class="btn ghost" title="设置 atlas-core 路径">⚙ 设置</button>
+  <button id="btnConnect" class="btn ghost" hidden data-icon="link" title="授权访问本地 pic 文件夹">连接文件夹</button>
+  <button id="btnTheme" class="btn ghost" title="切换浅色 / 深色主题">深色</button>
+  <button id="btnSettings" class="btn ghost" data-icon="settings" title="设置 atlas-core 路径">设置</button>
 </header>
 
 <div id="layout">
@@ -34,11 +34,12 @@
       <img id="mainImg" alt="" draggable="false">
       <div id="osdWrap"></div>
       <div id="viewerEmpty" class="placeholder">从左侧选择一张图<br><span class="muted">滚轮缩放 · 拖拽平移 · 双击 适应/1:1</span></div>
+      <div id="imgLoading" class="placeholder" hidden><span data-icon="image" data-icon-size="20"></span>正在解码图片…<br><span class="muted">88MB 级大图在浏览器内解码需数秒，请稍候</span></div>
       <div id="connectOverlay" class="placeholder" hidden>
         <div>
           <div style="font-size:15px;margin-bottom:6px">使用 GitHub Pages 模式需要先授权访问本地文件夹</div>
-          <div class="muted" style="margin-bottom:14px">授权后即可像本地软件一样直接读写 <b>pic/</b> 下的 MD 与图片（Chrome / Edge）</div>
-          <button id="btnConnectBig" class="btn primary">📂 选择 atlas-core 的 pic 文件夹</button>
+          <div class="muted" style="margin-bottom:14px">请选择 <b>pic 文件夹本身</b>（它包含 01_pending / 02_waiting / 03_published），不要选其中的子文件夹。授权后即可像本地软件一样直接读写 pic/ 下的 MD 与图片（Chrome / Edge）</div>
+          <button id="btnConnectBig" class="btn primary" data-icon="link" data-icon-size="16">选择 atlas-core 的 pic 文件夹</button>
         </div>
       </div>
     </div>
@@ -77,6 +78,7 @@
               <span class="hint" id="dateHint"></span>
             </label>
             <label class="field"><span>年份 year</span><input id="f_year" type="text" placeholder="自动生成"><span class="hint">按日期自动生成</span></label>
+        <label class="field"><span>状态 status</span><input id="f_status" type="text" readonly><span class="hint">随所在流水线池（01/02/03）自动写入，不可手改</span></label>
           </div>
           <label class="field inline-check"><input id="f_hero" type="checkbox"><span>首页门面大图（hero）</span></label>
         </div>
@@ -105,6 +107,7 @@
             <label class="field"><span>categoryName</span><input id="f_categoryName" type="text" readonly></label>
           </div>
           <div class="field"><span>二级分类 subCategory（可多选）</span><div id="subCatChips" class="chips"></div></div>
+          <div class="chips-suggest" id="subCatSuggest"></div>
           <div class="field"><span>三级专题 topic（可多选）</span><div id="topicChips" class="chips"></div></div>
           <div class="chips-suggest" id="topicSuggest"></div>
         </div>
@@ -175,9 +178,9 @@
 </dialog>
 
 <script src="static/vendor/openseadragon.min.js"></script>
-<script src="static/md.js?v=4"></script>
-<script src="static/imginfo.js?v=4"></script>
-<script src="static/fs-adapter.js?v=4"></script>
-<script src="static/app.js?v=4"></script>
+<script src="static/md.js?v=5"></script>
+<script src="static/imginfo.js?v=5"></script>
+<script src="static/fs-adapter.js?v=5"></script>
+<script src="static/app.js?v=5"></script>
 </body>
 </html>

@@ -3,9 +3,10 @@
 'use strict';
 window.MD = (() => {
 
-  const FIELD_ORDER = ['id', 'title', 'alt_name', 'author', 'date', 'year', 'physicalSize',
+  const FIELD_ORDER = ['id', 'title', 'status', 'alt_name', 'author', 'date', 'year', 'physicalSize',
     'category', 'categoryName', 'subCategory', 'topic', 'hero', 'image',
     'alias', 'tags', 'color', 'workflow'];
+  const STAGE_STATUS = { '01_pending': 'pending', '02_waiting': 'waiting', '03_published': 'published' };
   const LIST_FIELDS = new Set(['alias', 'tags', 'color']);
   const WORKFLOW_ORDER = ['QGIS', 'Ink', 'PS', 'GIMP', 'AI'];
   const QUOTED_ALWAYS = new Set(['date', 'year', 'physicalSize']);
@@ -197,5 +198,5 @@ window.MD = (() => {
     };
   }
 
-  return { FIELD_ORDER, WORKFLOW_ORDER, COMPOSITIONS, CATEGORY_NAMES, parseMdText, parseFrontmatter, parseBody, serializeMd, validate, suggestComposition, buildDraft };
+  return { FIELD_ORDER, STAGE_STATUS, WORKFLOW_ORDER, COMPOSITIONS, CATEGORY_NAMES, parseMdText, parseFrontmatter, parseBody, serializeMd, validate, suggestComposition, buildDraft };
 })();
