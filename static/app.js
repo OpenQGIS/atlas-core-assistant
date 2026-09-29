@@ -65,6 +65,29 @@ const ICONS = {
 const icon = (name, size = 14) =>
   `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
+/* ---------- 文本框随内容自动增高（无滚动条，空值按 minRows 行高） ---------- */
+
+function autoGrow(ta, minRows = 2) {
+  const cs = getComputedStyle(ta);
+  const lineH = parseFloat(cs.lineHeight) || 20;
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const minH = minRows * lineH + pad + 2;
+  ta.classList.add('_ag');
+  ta.style.resize = 'none';
+  ta.style.overflowY = 'hidden';
+  const grow = () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(ta.scrollHeight + 2, minH) + 'px';
+  };
+  ta.addEventListener('input', grow);
+  ta._grow = grow;
+  grow();
+}
+
+function regrowTextareas() {
+  $$('textarea._ag').forEach(t => t._grow && t._grow());
+}
+
 /* ================= API ================= */
 
 async function api(path, opts) {
@@ -555,6 +578,7 @@ function fillForm() {
   set('#f_id', f.id); set('#f_title', f.title); set('#f_alt_name', f.alt_name);
   set('#f_author', f.author); set('#f_date', f.date); set('#f_year', f.year);
   $('#f_hero').checked = String(f.hero || 'no').toLowerCase() === 'yes';
+  syncYear();  // year 只读，始终按 date 推导（纠正 MD 中可能过期的值）
   $('#f_category').value = f.category === 'gis' ? 'gis' : 'original';
   $('#f_categoryName').value = f.categoryName || CATEGORY_NAMES[$('#f_category').value] || '';
 
@@ -563,8 +587,8 @@ function fillForm() {
   $('#physW').value = phys.w ?? (info ? info.cmW : '');
   $('#physH').value = phys.h ?? (info ? info.cmH : '');
   const compSel = $('#physComp');
-  compSel.innerHTML = COMPOSITIONS.map(c => `<option>${c}</option>`).join('');
-  compSel.value = phys.comp || (info ? info.suggestedComposition : COMPOSITIONS[1]);
+  compSel.innerHTML = ['无', ...COMPOSITIONS].map(c => `<option>${c}</option>`).join('');
+  compSel.value = phys.comp || '无';   // MD 无构图后缀时如实显示"无"，不再回填建议值
   updatePhysPreview();
 
   // 规格信息
@@ -590,6 +614,7 @@ function fillForm() {
 
   // 正文
   $('#f_intro').value = b.intro || '';
+  if ($('#f_intro')._grow) $('#f_intro')._grow();
   renderVision(b.items || []);
 
   clearDirty();
@@ -636,7 +661,7 @@ function parsePhys(s) {
 
 function updatePhysPreview() {
   const w = $('#physW').value, h = $('#physH').value, c = $('#physComp').value;
-  $('#physPreview').textContent = w && h ? `${w}cm x ${h}cm，${c}` : '（待填写）';
+  $('#physPreview').textContent = w && h ? `${w}cm x ${h}cm${c && c !== '无' ? '，' + c : ''}` : '（待填写）';
 }
 
 function splitMulti(v) {
@@ -818,8 +843,8 @@ function renderWorkflow(wf) {
   const render = () => {
     box.innerHTML = '';
     keys.forEach(k => {
-      const row = document.createElement('div');
-      row.className = 'wf-row';
+      const row = document.createElement('label');
+      row.className = 'wf-item';
       row.innerHTML = `<span class="wname">${esc(k)}</span>
         <input type="number" min="0" max="100" step="1" value="${vals[k]}">
         <span class="unit">%</span>`;
@@ -884,11 +909,12 @@ function renderVision(items) {
         </div>`;
       row.querySelector('.vterm').oninput = e => { it.term = e.target.value; markDirty(); };
       row.querySelector('textarea').oninput = e => { it.desc = e.target.value; markDirty(); };
+      box.appendChild(row);
+      autoGrow(row.querySelector('textarea'), 2);   // 须在插入 DOM 后测高才准确
       row.querySelector('[data-op=up]').onclick = () => {
         if (i > 0) { const t = list[i - 1]; list[i - 1] = list[i]; list[i] = t; render(); markDirty(); }
       };
       row.querySelector('[data-op=del]').onclick = () => { list.splice(i, 1); render(); markDirty(); };
-      box.appendChild(row);
     });
     box._getList = () => list.filter(it => it.term || it.desc);
   };
@@ -916,7 +942,8 @@ function collectForm() {
   const stage = stageInfoOf(state.current.mdRel || state.current.imageRel);
   if (stage.status) fields.status = stage.status;  // 始终以实际所在池为准，纠正过期值
   if ($('#physW').value && $('#physH').value) {
-    fields.physicalSize = `${(+$('#physW').value).toFixed(1)}cm x ${(+$('#physH').value).toFixed(1)}cm，${$('#physComp').value}`;
+    const comp = $('#physComp').value;
+    fields.physicalSize = `${(+$('#physW').value).toFixed(1)}cm x ${(+$('#physH').value).toFixed(1)}cm${comp && comp !== '无' ? '，' + comp : ''}`;
   }
   const cat = $('#f_category').value;
   fields.category = cat;
@@ -1052,6 +1079,7 @@ function bindGlobalEvents() {
   window.addEventListener('beforeunload', e => {
     if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
   });
+  window.addEventListener('resize', regrowTextareas);
 
   // 表单面板宽度拖拽
   const splitter = $('#splitter');
@@ -1060,6 +1088,7 @@ function bindGlobalEvents() {
     const move = ev => {
       const w = window.innerWidth - ev.clientX;
       $('#formPane').style.width = Math.min(Math.max(w, 360), window.innerWidth * 0.6) + 'px';
+      regrowTextareas();   // 宽度变化后重算自动增高文本框的高度
     };
     const up = () => { splitter.classList.remove('on'); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
     window.addEventListener('mousemove', move);
@@ -1131,6 +1160,7 @@ function refreshCombos() {
 function bindFormEvents() {
   makeCombo($('#f_category'));
   makeCombo($('#physComp'));
+  autoGrow($('#f_intro'), 2);
   $('#formScroll').addEventListener('input', e => {
     if (e.target.closest('#rawBox')) return;
     markDirty();
