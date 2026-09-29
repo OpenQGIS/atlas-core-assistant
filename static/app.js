@@ -542,18 +542,26 @@ function bindViewer() {
 
 /* ================= 表单 ================= */
 
+/* 编辑状态灯：clean 绿灯「未修改」 / dirty 红灯「有修改未保存」 */
+function setDirtyUI(on) {
+  const el = $('#dirtyDot');
+  el.className = on ? 'dirty' : 'clean';
+  el.title = on ? '有修改未保存' : '未修改';
+  el.querySelector('em').textContent = on ? '有修改未保存' : '未修改';
+}
+
 function markDirty() {
   if (!state.current) return;
   if (!state.dirty) {
     state.dirty = true;
-    $('#dirtyDot').classList.add('on');
+    setDirtyUI(true);
     renderList();
   }
 }
 
 function clearDirty() {
   state.dirty = false;
-  $('#dirtyDot').classList.remove('on');
+  setDirtyUI(false);
   setSaveMsg('', '');
   renderList();
 }
