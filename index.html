@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AtlasCore 标注编辑器</title>
-<link rel="stylesheet" href="static/style.css?v=7">
+<link rel="stylesheet" href="static/style.css?v=8">
 </head>
 <body>
 
@@ -46,6 +46,8 @@
     <div id="viewerBar">
       <span id="imgMeta" class="muted small"></span>
       <span class="spacer"></span>
+      <span id="cursorCoord" class="muted small" style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;margin-right:6px"></span>
+      <button id="btnAnnotateMode" class="btn ghost" title="开启采点模式：在大图上直接点击即可新增标注点位">📍 采点标注</button>
       <span id="zoomLevel" class="muted small"></span>
       <button class="btn ghost" data-zoom="fit">适应</button>
       <button class="btn ghost" data-zoom="100">1:1</button>
@@ -132,6 +134,21 @@
           <div id="wfList"></div>
         </div>
 
+        <div class="section" id="secAnnotations">
+          <h3>
+            <span>大图标注 <i class="fld">annotations</i></span>
+            <span id="annCount" class="badge">0</span>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <button id="btnPromptAnn" class="btn mini" title="复制符合规范的 AI 提示词模板">📋 复制 AI 提词</button>
+              <button id="btnAddAnn" class="btn mini" title="手动添加一个新标注条目">+ 添加标注</button>
+            </div>
+          </h3>
+          <div id="annTip" class="hint" style="margin-bottom:8px">
+            💡 开启上方「📍 采点标注」后，在大图上直接点击即可捕获物理坐标并生成标注；点击标注条目可一键聚焦大图。
+          </div>
+          <div id="annList"></div>
+        </div>
+
         <div class="section">
           <h3>正文 · 制图思路</h3>
           <textarea id="f_intro" rows="2" placeholder="一段总述：画面主体、色调、构图逻辑…"></textarea>
@@ -178,9 +195,9 @@
 </dialog>
 
 <script src="static/vendor/openseadragon.min.js"></script>
-<script src="static/md.js?v=7"></script>
-<script src="static/imginfo.js?v=7"></script>
-<script src="static/fs-adapter.js?v=7"></script>
-<script src="static/app.js?v=7"></script>
+<script src="static/md.js?v=8"></script>
+<script src="static/imginfo.js?v=8"></script>
+<script src="static/fs-adapter.js?v=8"></script>
+<script src="static/app.js?v=8"></script>
 </body>
 </html>

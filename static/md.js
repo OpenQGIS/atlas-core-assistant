@@ -5,7 +5,7 @@ window.MD = (() => {
 
   const FIELD_ORDER = ['id', 'title', 'status', 'alt_name', 'author', 'date', 'year', 'physicalSize',
     'category', 'categoryName', 'subCategory', 'topic', 'hero', 'image',
-    'alias', 'tags', 'color', 'workflow'];
+    'alias', 'tags', 'color', 'workflow', 'annotations'];
   const STAGE_STATUS = { '01_pending': 'pending', '02_waiting': 'waiting', '03_published': 'published' };
   const LIST_FIELDS = new Set(['alias', 'tags', 'color']);
   const WORKFLOW_ORDER = ['QGIS', 'Ink', 'PS', 'GIMP', 'AI'];
@@ -28,6 +28,75 @@ window.MD = (() => {
     return m ? v.slice(0, m.index).trim() : v;
   }
 
+  function parseVal(v) {
+    v = String(v).trim();
+    if (v.startsWith('[') && v.endsWith(']')) {
+      const inner = v.slice(1, -1).trim();
+      if (!inner) return [];
+      return inner.split(',').map(x => {
+        x = x.trim();
+        const n = Number(x);
+        return isNaN(n) ? unquote(x) : n;
+      });
+    }
+    if (v.toLowerCase() === 'true') return true;
+    if (v.toLowerCase() === 'false') return false;
+    const n = Number(v);
+    if (!isNaN(n) && v !== '') return n;
+    return unquote(v);
+  }
+
+  function parseAnnotationsBlock(lines) {
+    const anns = [];
+    let curr = null;
+    let subListKey = null;
+    let subDictKey = null;
+    for (const raw of lines) {
+      const s = raw.trim();
+      if (!s || s.startsWith('#')) continue;
+      const indent = raw.length - raw.trimStart().length;
+      if (s.startsWith('- ')) {
+        const rest = s.slice(2).trim();
+        if (subListKey && curr && (rest.startsWith('[') || /^[\d.-]+/.test(rest))) {
+          curr[subListKey].push(parseVal(rest));
+          continue;
+        }
+        curr = {};
+        anns.push(curr);
+        subListKey = null;
+        subDictKey = null;
+        if (rest) {
+          const m = rest.match(/^(\w+)\s*:\s*(.*)$/);
+          if (m) curr[m[1]] = parseVal(m[2]);
+        }
+        continue;
+      }
+      const m = s.match(/^(\w+)\s*:\s*(.*)$/);
+      if (m && curr) {
+        const k = m[1];
+        const v = m[2].trim();
+        if (!v) {
+          if (k === 'polygon' || k === 'polyline') {
+            curr[k] = [];
+            subListKey = k;
+            subDictKey = null;
+          } else {
+            curr[k] = {};
+            subDictKey = k;
+            subListKey = null;
+          }
+        } else if (subDictKey && indent >= 6) {
+          curr[subDictKey][k] = parseVal(v);
+        } else {
+          subDictKey = null;
+          subListKey = null;
+          curr[k] = parseVal(v);
+        }
+      }
+    }
+    return anns;
+  }
+
   function parseFrontmatter(text) {
     const m = text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n([\s\S]*))?$/);
     if (!m) return { fields: {}, body: text, ok: false };
@@ -46,6 +115,31 @@ window.MD = (() => {
       if (!mm) continue;
       const key = unquote(mm[1]).trim();
       const val = mm[2].trim();
+
+      if (key === 'annotations') {
+        const annLines = [];
+        let j = i + 1;
+        while (j < lines.length) {
+          const jl = lines[j];
+          const js = jl.trim();
+          if (!js || js.startsWith('#')) {
+            annLines.push(jl);
+            j++;
+            continue;
+          }
+          if (jl.startsWith('  ') || jl.startsWith('\t')) {
+            annLines.push(jl);
+            j++;
+          } else {
+            break;
+          }
+        }
+        fields.annotations = parseAnnotationsBlock(annLines);
+        if (!order.includes('annotations')) order.push('annotations');
+        i = j - 1;
+        pending = null;
+        continue;
+      }
       if (val === '') {
         // 向后看第一条数据行，决定列表还是字典
         let j = i + 1;
@@ -115,6 +209,42 @@ window.MD = (() => {
         out.push(`${k}:`);
         const keys = [...WORKFLOW_ORDER.filter(x => x in v), ...Object.keys(v).filter(x => !WORKFLOW_ORDER.includes(x))];
         for (const sk of keys) out.push(`  ${sk}: ${String(v[sk]).replace(/%$/, '').trim()}%`);
+      } else if (k === 'annotations' && Array.isArray(v)) {
+        out.push('annotations:');
+        for (const ann of v) {
+          if (!ann || typeof ann !== 'object') continue;
+          let first = true;
+          const keysOrder = ['id', 'type', 'coord', 'title', 'desc', 'level', 'zoomLevel', 'bbox', 'polygon', 'polyline', 'style'];
+          const orderedKeys = [...keysOrder.filter(x => x in ann), ...Object.keys(ann).filter(x => !keysOrder.includes(x))];
+          for (const ak of orderedKeys) {
+            const av = ann[ak];
+            if (av === undefined || av === null || av === '' || (Array.isArray(av) && !av.length)) continue;
+            const dash = first ? '- ' : '  ';
+            first = false;
+            if (ak === 'coord' && Array.isArray(av)) {
+              out.push(`  ${dash}coord: [${av[0]}, ${av[1]}]`);
+            } else if (ak === 'bbox' && Array.isArray(av)) {
+              out.push(`  ${dash}bbox: [${av.join(', ')}]`);
+            } else if ((ak === 'polygon' || ak === 'polyline') && Array.isArray(av)) {
+              out.push(`  ${dash}${ak}:`);
+              for (const pt of av) {
+                if (Array.isArray(pt)) out.push(`      - [${pt[0]}, ${pt[1]}]`);
+                else out.push(`      - ${pt}`);
+              }
+            } else if (ak === 'style' && typeof av === 'object') {
+              out.push(`  ${dash}style:`);
+              for (const [sk, sv] of Object.entries(av)) {
+                out.push(`      ${sk}: ${sv}`);
+              }
+            } else if (typeof av === 'boolean') {
+              out.push(`  ${dash}${ak}: ${av}`);
+            } else if (typeof av === 'number') {
+              out.push(`  ${dash}${ak}: ${av}`);
+            } else {
+              out.push(`  ${dash}${ak}: ${fmtScalar(ak, av)}`);
+            }
+          }
+        }
       } else if (Array.isArray(v)) {
         out.push(`${k}:`);
         for (const item of v) out.push(`  - ${fmtScalar('__item__', item)}`);
