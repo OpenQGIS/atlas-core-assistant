@@ -100,7 +100,7 @@ def resolve_rel(rel, root=None):
 
 FIELD_ORDER = ['id', 'title', 'status', 'alt_name', 'author', 'date', 'year', 'physicalSize',
                'category', 'categoryName', 'subCategory', 'topic', 'hero', 'image',
-               'alias', 'tags', 'color', 'workflow']
+               'alias', 'tags', 'color', 'workflow', 'annotations']
 STAGE_STATUS = {'01_pending': 'pending', '02_waiting': 'waiting', '03_published': 'published'}
 LIST_FIELDS = {'alias', 'tags', 'color'}
 WORKFLOW_ORDER = ['QGIS', 'Ink', 'PS', 'GIMP', 'AI']
@@ -116,8 +116,79 @@ def _unquote(v):
     return v
 
 
+def _parse_val(v):
+    v = v.strip()
+    if v.startswith('[') and v.endswith(']'):
+        inner = v[1:-1].strip()
+        if not inner:
+            return []
+        items = [x.strip() for x in inner.split(',')]
+        res = []
+        for it in items:
+            try:
+                res.append(int(it) if '.' not in it else float(it))
+            except Exception:
+                res.append(_unquote(it))
+        return res
+    if v.lower() == 'true':
+        return True
+    if v.lower() == 'false':
+        return False
+    try:
+        return int(v) if '.' not in v else float(v)
+    except Exception:
+        pass
+    return _unquote(v)
+
+
+def parse_annotations_block(lines):
+    anns = []
+    curr = None
+    sub_list_key = None
+    sub_dict_key = None
+    for line in lines:
+        raw = line
+        s = line.strip()
+        if not s or s.startswith('#'):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        if s.startswith('- '):
+            rest = s[2:].strip()
+            if sub_list_key and curr and (rest.startswith('[') or re.match(r'^[\d.-]+', rest)):
+                curr[sub_list_key].append(_parse_val(rest))
+                continue
+            curr = {}
+            anns.append(curr)
+            sub_list_key = None
+            sub_dict_key = None
+            if rest:
+                m = re.match(r'^(\w+)\s*:\s*(.*)$', rest)
+                if m:
+                    curr[m.group(1)] = _parse_val(m.group(2))
+            continue
+        m = re.match(r'^(\w+)\s*:\s*(.*)$', s)
+        if m and curr is not None:
+            k, v = m.group(1), m.group(2).strip()
+            if not v:
+                if k in ('polygon', 'polyline'):
+                    curr[k] = []
+                    sub_list_key = k
+                    sub_dict_key = None
+                else:
+                    curr[k] = {}
+                    sub_dict_key = k
+                    sub_list_key = None
+            elif sub_dict_key and indent >= 6:
+                curr[sub_dict_key][k] = _parse_val(v)
+            else:
+                sub_dict_key = None
+                sub_list_key = None
+                curr[k] = _parse_val(v)
+    return anns
+
+
 def parse_frontmatter(text):
-    """解析 YAML frontmatter（本项目子集：标量/列表/一层字典/注释）。"""
+    """解析 YAML frontmatter（本项目子集：标量/列表/一层字典/注释/annotations结构）。"""
     m = re.match(r'^---\s*\r?\n(.*?)\r?\n---\s*(?:\r?\n(.*))?$', text, re.DOTALL)
     if not m:
         return {}, text, False
@@ -143,6 +214,29 @@ def parse_frontmatter(text):
             continue
         key = _unquote(mm.group(1)).strip()
         val = mm.group(2).strip()
+
+        if key == 'annotations':
+            ann_lines = []
+            j = i + 1
+            while j < len(lines):
+                jl = lines[j]
+                js = jl.strip()
+                if not js or js.startswith('#'):
+                    ann_lines.append(jl)
+                    j += 1
+                    continue
+                if jl.startswith('  ') or jl.startswith('\t'):
+                    ann_lines.append(jl)
+                    j += 1
+                else:
+                    break
+            fields['annotations'] = parse_annotations_block(ann_lines)
+            if 'annotations' not in order:
+                order.append('annotations')
+            i = j
+            pending = None
+            continue
+
         if val == '':
             # 列表还是字典：向后看第一条数据行
             j = i + 1
@@ -244,6 +338,41 @@ def serialize_md(fields, body):
             out.append(f'{k}:')
             for item in v:
                 out.append(f'  - {_fmt_scalar("__item__", item)}')
+        elif k == 'annotations' and isinstance(v, list):
+            out.append('annotations:')
+            for ann in v:
+                if not isinstance(ann, dict):
+                    continue
+                first = True
+                keys_order = ['id', 'type', 'coord', 'title', 'desc', 'level', 'zoomLevel', 'bbox', 'polygon', 'polyline', 'style']
+                ordered_keys = [x for x in keys_order if x in ann] + [x for x in ann if x not in keys_order]
+                for ak in ordered_keys:
+                    av = ann[ak]
+                    if av is None or av == '' or av == []:
+                        continue
+                    dash = '- ' if first else '  '
+                    first = False
+                    if ak == 'coord' and isinstance(av, (list, tuple)):
+                        out.append(f'  {dash}coord: [{av[0]}, {av[1]}]')
+                    elif ak == 'bbox' and isinstance(av, (list, tuple)):
+                        out.append(f'  {dash}bbox: [{", ".join(str(x) for x in av)}]')
+                    elif ak in ('polygon', 'polyline') and isinstance(av, list):
+                        out.append(f'  {dash}{ak}:')
+                        for pt in av:
+                            if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                                out.append(f'      - [{pt[0]}, {pt[1]}]')
+                            else:
+                                out.append(f'      - {pt}')
+                    elif ak == 'style' and isinstance(av, dict):
+                        out.append(f'  {dash}style:')
+                        for sk, sv in av.items():
+                            out.append(f'      {sk}: {str(sv).lower() if isinstance(sv, bool) else sv}')
+                    elif isinstance(av, bool):
+                        out.append(f'  {dash}{ak}: {str(av).lower()}')
+                    elif isinstance(av, (int, float)):
+                        out.append(f'  {dash}{ak}: {av}')
+                    else:
+                        out.append(f'  {dash}{ak}: {_fmt_scalar(ak, av)}')
         elif isinstance(v, list):
             out.append(f'{k}:')
             for item in v:

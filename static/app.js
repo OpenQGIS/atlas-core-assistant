@@ -44,6 +44,8 @@ const state = {
   body: null,
   dirty: false,
   expanded: new Set(), // 展开的文件夹路径（按阶段持久化）
+  annotateMode: false,
+  pickingTargetIndex: null,
 };
 
 const $ = s => document.querySelector(s);
@@ -57,6 +59,7 @@ const ICONS = {
   'chevron-down': '<path d="M6 9L12 15L18 9"/>',
   link: '<path d="M8.1883 18.4383C7.5084 19.1181 6.5864 19.5 5.625 19.5C4.6636 19.5 3.7416 19.1181 3.0617 18.4383C2.3819 17.7584 2 16.8364 2 15.875C2 14.9136 2.3819 13.9916 3.0617 13.3117L8.1867 8.1867C8.8666 7.5069 9.7886 7.125 10.75 7.125C11.7114 7.125 12.6334 7.5069 13.3133 8.1867C13.9931 8.8666 14.375 9.7886 14.375 10.75C14.375 11.7114 13.9931 12.6334 13.3133 13.3133M15.8117 5.5617C16.4916 4.8819 17.4136 4.5 18.375 4.5C19.3364 4.5 20.2584 4.8819 20.9383 5.5617C21.6181 6.2416 22 7.1636 22 8.125C22 9.0864 21.6181 10.0084 20.9383 10.6883L15.8133 15.8133C15.1334 16.4931 14.2114 16.875 13.25 16.875C12.2886 16.875 11.3666 16.4931 10.6867 15.8133C10.0069 15.1334 9.625 14.2114 9.625 13.25C9.625 12.2886 10.0069 11.3666 10.6867 10.6867"/>',
   settings: '<path d="M13.5 4.8845C13.5 5.3482 13.8221 5.7434 14.2571 5.9041C14.4124 5.9615 14.5649 6.0247 14.7143 6.0933C15.1356 6.2869 15.6427 6.2353 15.9706 5.9076L16.5966 5.2819C16.9872 4.8916 17.6202 4.8917 18.0106 5.2821L18.7175 5.989C19.1081 6.3796 19.108 7.0129 18.7173 7.4034L18.0922 8.0283C17.7641 8.3562 17.7124 8.8636 17.9062 9.2851C17.975 9.4347 18.0383 9.5874 18.0958 9.7429C18.2566 10.1779 18.6518 10.5 19.1155 10.5L20 10.5C20.5523 10.5 21 10.9477 21 11.5L21 12.5C21 13.0523 20.5523 13.5 20 13.5L19.1155 13.5C18.6518 13.5 18.2566 13.8221 18.0956 14.257C18.0381 14.4123 17.9749 14.5648 17.9061 14.7143C17.7123 15.1355 17.7639 15.6428 18.0918 15.9707L18.7177 16.5966C19.1082 16.9871 19.1082 17.6203 18.7177 18.0108L18.0108 18.7177C17.6203 19.1082 16.9871 19.1082 16.5966 18.7177L15.9707 18.0918C15.6428 17.7639 15.1355 17.7123 14.7141 17.9058C14.5647 17.9745 14.4123 18.0376 14.2571 18.0949C13.8221 18.2556 13.5 18.6508 13.5 19.1145L13.5 20C13.5 20.5523 13.0523 21 12.5 21L11.5 21C10.9477 21 10.5 20.5523 10.5 20L10.5 19.1145C10.5 18.6508 10.1779 18.2556 9.7429 18.0951C9.5874 18.0377 9.4348 17.9746 9.2852 17.9059C8.8636 17.7124 8.3562 17.7641 8.0283 18.0922L7.4034 18.7173C7.0129 19.108 6.3796 19.1081 5.989 18.7175L5.2821 18.0106C4.8917 17.6202 4.8916 16.9872 5.2819 16.5966L5.9076 15.9706C6.2353 15.6427 6.2869 15.1356 6.0933 14.7143C6.0247 14.5649 5.9615 14.4124 5.9041 14.2571C5.7434 13.8221 5.3482 13.5 4.8845 13.5L4 13.5C3.4477 13.5 3 13.0523 3 12.5L3 11.5C3 10.9477 3.4477 10.5 4 10.5L4.8845 10.5C5.3482 10.5 5.7434 10.1779 5.904 9.7429C5.9614 9.5874 6.0245 9.4346 6.0933 9.285C6.2867 8.8635 6.2351 8.3562 5.9072 8.0283L5.2823 7.4034C4.8918 7.0129 4.8918 6.3797 5.2823 5.9892L5.9892 5.2823C6.3797 4.8918 7.0129 4.8918 7.4034 5.2823L8.0283 5.9072C8.3562 6.2351 8.8635 6.2867 9.285 6.0933C9.4346 6.0245 9.5874 5.9614 9.7429 5.904C10.1779 5.7434 10.5 5.3482 10.5 4.8845L10.5 4C10.5 3.4477 10.9477 3 11.5 3L12.5 3C13.0523 3 13.5 3.4477 13.5 4L13.5 4.8845ZM12 9.5C13.3807 9.5 14.5 10.6193 14.5 12C14.5 13.3807 13.3807 14.5 12 14.5C10.6193 14.5 9.5 13.3807 9.5 12C9.5 10.6193 10.6193 9.5 12 9.5Z"/>',
+  pin: '<path d="M12 21C12 21 19 14.5 19 9.5C19 5.63401 15.866 2.5 12 2.5C8.13401 2.5 5 5.63401 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/>',
   sun: '<path d="M16.5 12C16.5 14.4854 14.4854 16.5 12 16.5C9.5147 16.5 7.5 14.4854 7.5 12C7.5 9.5147 9.5147 7.5 12 7.5C14.4854 7.5 16.5 9.5147 16.5 12ZM20.5 12L22 12M18.0104 18.0104L19.0711 19.0711M12 20.5L12 22M5.9896 18.0104L4.9289 19.0711M3.5 12L2 12M5.9896 5.9896L4.9289 4.9289M12 3.5L12 2M18.0104 5.9896L19.0711 4.9289"/>',
   moon: '<path d="M21 12C21 16.9706 16.9706 21 12 21C7.0294 21 3 16.9706 3 12C3 7.0294 7.0294 3 12 3C9.9618 5.5477 10.1652 9.2206 12.4723 11.5277C14.7794 13.8348 18.4523 14.0382 21 12Z"/>',
   image: '<path d="M6 3L18 3C19.6569 3 21 4.3431 21 6L21 18C21 19.6569 19.6569 21 18 21L6 21C4.3431 21 3 19.6569 3 18L3 6C3 4.3431 4.3431 3 6 3ZM3 18L7.9393 13.0607C8.5251 12.4749 9.4749 12.4749 10.0607 13.0607L12.0801 15.0801C12.6079 15.6079 13.4436 15.6673 14.0408 15.2194L15.9592 13.7806C16.5564 13.3327 17.3921 13.3921 17.9199 13.9199L21 17"/><path d="M9.5 7.5C9.5 8.3284 8.8284 9 8 9C7.1716 9 6.5 8.3284 6.5 7.5C6.5 6.6716 7.1716 6 8 6C8.8284 6 9.5 6.6716 9.5 7.5Z" fill="currentColor" stroke="none"/>',
@@ -413,6 +416,8 @@ async function openItem(it) {
     state.fields = data.fields;
     state.body = data.body;
     state.dirty = false;
+    state.pickingTargetIndex = null;
+    updateAnnotateModeUI();
     expandTo(it.folder);
     fillForm();
     loadViewer(data.imageRel, data.imageInfo);
@@ -442,7 +447,14 @@ function ensureOsd() {
     visibilityRatio: 0.5,
     gestureSettingsMouse: { dblClickToZoom: false },
   });
-  osdViewer.addHandler('tile-drawn', () => { hideUnderlaySoon(); $('#imgLoading').hidden = true; });
+  osdViewer.addHandler('tile-drawn', () => {
+    hideUnderlaySoon();
+    $('#imgLoading').hidden = true;
+    renderOsdOverlays();
+  });
+  osdViewer.addHandler('open', () => {
+    renderOsdOverlays();
+  });
   osdViewer.addHandler('open-failed', () => {
     $('#imgLoading').hidden = true;
     toast('原图解码失败：文件过大或浏览器不支持该格式', 'err');
@@ -462,6 +474,83 @@ function ensureOsd() {
   };
   osdViewer.addHandler('zoom', upd);
   osdViewer.addHandler('animation', upd);
+
+  // 采点交互：点击大图添加或更新标注
+  osdViewer.addHandler('canvas-click', e => {
+    if (!e.quick) return;
+    if (!state.current) return;
+    if (!state.annotateMode && state.pickingTargetIndex === null) return;
+    if (e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest('.osd-pin')) return;
+
+    const vpPoint = osdViewer.viewport.pointFromPixel(e.position);
+    const imgPoint = osdViewer.viewport.viewportToImageCoordinates(vpPoint);
+    const info = state.current.imageInfo;
+    const imgW = info ? info.width : 0;
+    const imgH = info ? info.height : 0;
+    const x = Math.round(imgPoint.x);
+    const y = Math.round(imgPoint.y);
+    if (imgW && imgH && (x < 0 || x > imgW || y < 0 || y > imgH)) return;
+
+    if (state.pickingTargetIndex !== null) {
+      const list = $('#annList')._getList ? $('#annList')._getList() : [];
+      if (list[state.pickingTargetIndex]) {
+        list[state.pickingTargetIndex].coord = [x, y];
+        const idx = state.pickingTargetIndex;
+        state.pickingTargetIndex = null;
+        updateAnnotateModeUI();
+        renderAnnotations(list);
+        markDirty();
+        toast(`已更新标注 #${idx + 1} 坐标为 [${x}, ${y}]`, 'ok');
+        highlightAnnCard(idx);
+      }
+      return;
+    }
+
+    if (state.annotateMode) {
+      const list = $('#annList')._getList ? $('#annList')._getList() : [];
+      const nextId = `ann-${(list.length + 1).toString().padStart(2, '0')}`;
+      const curZoom = Number((osdViewer.viewport.viewportToImageZoom(osdViewer.viewport.getZoom(true))).toFixed(1)) || 2.0;
+      const newAnn = {
+        id: nextId,
+        type: 'point',
+        coord: [x, y],
+        title: `点位 ${list.length + 1}`,
+        desc: '',
+        level: 'primary',
+        zoomLevel: curZoom,
+      };
+      list.push(newAnn);
+      renderAnnotations(list);
+      markDirty();
+      toast(`已在 [${x}, ${y}] 添加新标注`, 'ok');
+      highlightAnnCard(list.length - 1, true);
+    }
+  });
+
+  // 鼠标移动显示真实像素坐标
+  const canvasEl = osdViewer.canvas;
+  canvasEl.addEventListener('pointermove', e => {
+    if (!osdViewer || !osdViewer.viewport || !state.current || !state.current.imageInfo) {
+      $('#cursorCoord').textContent = '';
+      return;
+    }
+    const rect = canvasEl.getBoundingClientRect();
+    const pt = new OpenSeadragon.Point(e.clientX - rect.left, e.clientY - rect.top);
+    const vpPoint = osdViewer.viewport.pointFromPixel(pt);
+    const imgPoint = osdViewer.viewport.viewportToImageCoordinates(vpPoint);
+    const info = state.current.imageInfo;
+    const x = Math.round(imgPoint.x);
+    const y = Math.round(imgPoint.y);
+    if (x >= 0 && x <= info.width && y >= 0 && y <= info.height) {
+      $('#cursorCoord').textContent = `[${x}, ${y}]`;
+    } else {
+      $('#cursorCoord').textContent = '';
+    }
+  });
+  canvasEl.addEventListener('pointerleave', () => {
+    $('#cursorCoord').textContent = '';
+  });
+
   return osdViewer;
 }
 
@@ -490,10 +579,14 @@ async function loadViewer(imageRel, info) {
   const loading = $('#imgLoading');
   $('#viewerEmpty').style.display = imageRel ? 'none' : 'flex';
   if (!imageRel) {
-    if (osdViewer) osdViewer.close();
+    if (osdViewer) {
+      osdViewer.close();
+      osdViewer.clearOverlays();
+    }
     img.style.display = 'none';
     loading.hidden = true;
     $('#zoomLevel').textContent = '';
+    $('#cursorCoord').textContent = '';
     return;
   }
   // 即显缩略图垫底，瓦片就绪后淡出
@@ -619,6 +712,9 @@ function fillForm() {
   // workflow
   const wf = f.workflow && typeof f.workflow === 'object' ? f.workflow : {};
   renderWorkflow(wf);
+
+  // annotations
+  renderAnnotations(f.annotations || []);
 
   // 正文
   $('#f_intro').value = b.intro || '';
@@ -930,6 +1026,256 @@ function renderVision(items) {
   $('#btnAddVision').onclick = () => { list.push({ term: '', desc: '' }); render(); markDirty(); box.lastElementChild && box.lastElementChild.querySelector('.vterm').focus(); };
 }
 
+/* ================= 大图标注 (Annotations) 交互与管理 ================= */
+
+function updateAnnotateModeUI() {
+  const btn = $('#btnAnnotateMode');
+  const isPicking = state.pickingTargetIndex !== null;
+  const isActive = state.annotateMode || isPicking;
+  if (btn) {
+    btn.classList.toggle('active', isActive);
+    if (isPicking) {
+      btn.innerHTML = `🎯 拾取中(#${state.pickingTargetIndex + 1})…`;
+    } else if (state.annotateMode) {
+      btn.innerHTML = `📍 采点中(点击大图)`;
+    } else {
+      btn.innerHTML = `📍 采点标注`;
+    }
+  }
+  if (osdViewer && osdViewer.canvas) {
+    osdViewer.canvas.style.cursor = isActive ? 'crosshair' : '';
+  }
+}
+
+function focusAnnotation(ann) {
+  if (!osdViewer || !osdViewer.viewport || !ann || !ann.coord || ann.coord.length < 2) return;
+  const vpPt = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(ann.coord[0], ann.coord[1]));
+  const targetZoom = ann.zoomLevel
+    ? osdViewer.viewport.imageToViewportZoom(ann.zoomLevel)
+    : Math.max(osdViewer.viewport.getZoom(true), osdViewer.viewport.imageToViewportZoom(2.0));
+  osdViewer.viewport.zoomTo(targetZoom, vpPt, false);
+  osdViewer.viewport.panTo(vpPt, false);
+}
+
+function highlightAnnCard(idx, focusTitle = false) {
+  const card = $(`#annList .ann-card[data-idx="${idx}"]`);
+  if (!card) return;
+  $$('#annList .ann-card').forEach(c => c.classList.remove('highlight'));
+  card.classList.add('highlight');
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (focusTitle) {
+    const ti = card.querySelector('.ann-input-title');
+    if (ti) { ti.focus(); ti.select(); }
+  }
+}
+
+function makePinElement(ann, idx) {
+  const el = document.createElement('div');
+  el.className = `osd-pin pin-${ann.level || 'primary'}`;
+  el.dataset.idx = idx;
+  el.innerHTML = `
+    <div class="pin-marker">
+      <div class="pin-dot"></div>
+      <div class="pin-pulse"></div>
+    </div>
+    <div class="pin-label">${esc(ann.title || ann.id || '标注')}</div>
+  `;
+  el.title = `${ann.title || ann.id} [${(ann.coord || []).join(', ')}] - 点击在右侧查看`;
+  el.onclick = (e) => {
+    e.stopPropagation();
+    highlightAnnCard(idx, false);
+    focusAnnotation(ann);
+  };
+  return el;
+}
+
+function renderOsdOverlays() {
+  if (!osdViewer || !osdViewer.viewport || !state.current) return;
+  osdViewer.clearOverlays();
+  const list = $('#annList')._getList ? $('#annList')._getList() : (state.fields?.annotations || []);
+  list.forEach((ann, idx) => {
+    if (!ann || !ann.coord || !Array.isArray(ann.coord) || ann.coord.length < 2) return;
+    const pt = new OpenSeadragon.Point(ann.coord[0], ann.coord[1]);
+    const vpPt = osdViewer.viewport.imageToViewportCoordinates(pt);
+    const el = makePinElement(ann, idx);
+    osdViewer.addOverlay({
+      element: el,
+      location: vpPt,
+      placement: OpenSeadragon.Placement.CENTER,
+      checkResize: false
+    });
+  });
+}
+
+function renderAnnotations(items) {
+  const box = $('#annList');
+  box.innerHTML = '';
+  const list = (items || []).map(it => ({
+    id: it.id || '',
+    type: it.type || 'point',
+    coord: Array.isArray(it.coord) ? [...it.coord] : [0, 0],
+    title: it.title || '',
+    desc: it.desc || '',
+    level: it.level || 'primary',
+    zoomLevel: it.zoomLevel !== undefined ? it.zoomLevel : 2.0,
+    polygon: Array.isArray(it.polygon) ? it.polygon : undefined,
+    bbox: Array.isArray(it.bbox) ? it.bbox : undefined,
+    style: it.style && typeof it.style === 'object' ? it.style : undefined,
+  }));
+
+  const updateCount = () => {
+    $('#annCount').textContent = list.length;
+  };
+
+  const render = () => {
+    box.innerHTML = '';
+    list.forEach((ann, i) => {
+      const card = document.createElement('div');
+      card.className = 'ann-card';
+      card.dataset.idx = i;
+      card.innerHTML = `
+        <div class="ann-head">
+          <span class="ann-idx">#${i + 1}</span>
+          <input class="ann-input-title" type="text" value="${esc(ann.title)}" placeholder="标题 (如：马道枢纽)">
+          <span class="ann-badge level-${ann.level || 'primary'}">${ann.level || 'primary'}</span>
+          <span class="ann-badge type-badge">${ann.type || 'point'}</span>
+          <button class="btn mini ann-btn-focus" type="button" title="在大图上聚焦定位此点">🔍 聚焦</button>
+          <button class="btn mini ann-btn-pick" type="button" title="在大图上重新点击拾取此点坐标">🎯 采点</button>
+          <button class="btn mini ghost ann-btn-del" type="button" title="删除标注">×</button>
+        </div>
+        <div class="ann-body">
+          <div class="grid2">
+            <label class="field"><span>id</span><input class="ann-input-id" type="text" value="${esc(ann.id)}" placeholder="ann-01"></label>
+            <label class="field"><span>等级 level</span>
+              <select class="ann-select-level">
+                <option value="primary" ${ann.level === 'primary' ? 'selected' : ''}>primary (核心主线)</option>
+                <option value="accent" ${ann.level === 'accent' ? 'selected' : ''}>accent (工艺/工程亮点)</option>
+                <option value="info" ${ann.level === 'info' ? 'selected' : ''}>info (辅助注记)</option>
+              </select>
+            </label>
+            <label class="field"><span>类型 type</span>
+              <select class="ann-select-type">
+                <option value="point" ${ann.type === 'point' ? 'selected' : ''}>point (单点/地标)</option>
+                <option value="area" ${ann.type === 'area' ? 'selected' : ''}>area (工程段/多边形)</option>
+                <option value="rect" ${ann.type === 'rect' ? 'selected' : ''}>rect (矩形特写)</option>
+                <option value="path" ${ann.type === 'path' ? 'selected' : ''}>path (折线/路线)</option>
+              </select>
+            </label>
+            <label class="field"><span>聚焦倍率 zoomLevel</span>
+              <div style="display:flex;gap:4px">
+                <input class="ann-input-zoom" type="number" step="0.1" min="0.1" value="${ann.zoomLevel ?? ''}" placeholder="2.0">
+                <button class="btn mini ann-btn-curzoom" type="button" title="设为当前视图缩放倍率">当前</button>
+              </div>
+            </label>
+          </div>
+          <div class="ann-coord-row">
+            <span class="muted small">坐标 coord [X, Y]：</span>
+            <input class="ann-input-x" type="number" value="${ann.coord?.[0] ?? 0}" placeholder="X">
+            <span class="muted small">,</span>
+            <input class="ann-input-y" type="number" value="${ann.coord?.[1] ?? 0}" placeholder="Y">
+          </div>
+          <div class="field" style="margin-top:4px">
+            <span>说明 desc</span>
+            <textarea class="ann-input-desc" rows="2" placeholder="详细工程/地理说明（1~2句话）">${esc(ann.desc)}</textarea>
+          </div>
+        </div>`;
+
+      // Event bindings
+      const inputTitle = card.querySelector('.ann-input-title');
+      inputTitle.oninput = e => {
+        ann.title = e.target.value;
+        markDirty();
+        renderOsdOverlays();
+      };
+
+      const inputId = card.querySelector('.ann-input-id');
+      inputId.oninput = e => { ann.id = e.target.value; markDirty(); };
+
+      const selLevel = card.querySelector('.ann-select-level');
+      selLevel.onchange = e => {
+        ann.level = e.target.value;
+        const b = card.querySelector('.ann-badge.level-primary, .ann-badge.level-accent, .ann-badge.level-info');
+        if (b) {
+          b.className = `ann-badge level-${ann.level}`;
+          b.textContent = ann.level;
+        }
+        markDirty();
+        renderOsdOverlays();
+      };
+
+      const selType = card.querySelector('.ann-select-type');
+      selType.onchange = e => {
+        ann.type = e.target.value;
+        card.querySelector('.ann-badge.type-badge').textContent = ann.type;
+        markDirty();
+      };
+
+      const inputZoom = card.querySelector('.ann-input-zoom');
+      inputZoom.oninput = e => {
+        ann.zoomLevel = e.target.value ? Number(e.target.value) : undefined;
+        markDirty();
+      };
+
+      card.querySelector('.ann-btn-curzoom').onclick = () => {
+        if (!osdViewer || !osdViewer.viewport) return;
+        const cur = Number((osdViewer.viewport.viewportToImageZoom(osdViewer.viewport.getZoom(true))).toFixed(1)) || 2.0;
+        ann.zoomLevel = cur;
+        inputZoom.value = cur;
+        markDirty();
+        toast(`已设为当前缩放倍率：${cur}x`, 'ok');
+      };
+
+      const inputX = card.querySelector('.ann-input-x');
+      const inputY = card.querySelector('.ann-input-y');
+      const updateCoord = () => {
+        const x = Number(inputX.value) || 0;
+        const y = Number(inputY.value) || 0;
+        ann.coord = [x, y];
+        markDirty();
+        renderOsdOverlays();
+      };
+      inputX.oninput = updateCoord;
+      inputY.oninput = updateCoord;
+
+      const taDesc = card.querySelector('.ann-input-desc');
+      taDesc.oninput = e => {
+        ann.desc = e.target.value;
+        markDirty();
+      };
+      autoGrow(taDesc, 2);
+
+      card.querySelector('.ann-btn-focus').onclick = () => {
+        focusAnnotation(ann);
+        highlightAnnCard(i, false);
+      };
+
+      card.querySelector('.ann-btn-pick').onclick = () => {
+        state.pickingTargetIndex = i;
+        state.annotateMode = false;
+        updateAnnotateModeUI();
+        toast(`已进入重采坐标模式，请在大图上点击 #${i + 1}「${ann.title || ann.id}」的新位置`, 'ok');
+      };
+
+      card.querySelector('.ann-btn-del').onclick = () => {
+        list.splice(i, 1);
+        if (state.pickingTargetIndex === i) state.pickingTargetIndex = null;
+        updateAnnotateModeUI();
+        render();
+        markDirty();
+        renderOsdOverlays();
+      };
+
+      box.appendChild(card);
+    });
+
+    updateCount();
+    renderOsdOverlays();
+  };
+
+  render();
+  box._getList = () => list.filter(it => it.title || it.id || (it.coord && it.coord.length === 2));
+}
+
 /* ================= 收集 & 保存 ================= */
 
 function syncYear() {
@@ -970,6 +1316,8 @@ function collectForm() {
   const colors = $('#colorList')._getList();
   if (colors.length) fields.color = colors;
   fields.workflow = $('#wfList')._getMap();
+  const anns = $('#annList')._getList ? $('#annList')._getList() : [];
+  if (anns.length) fields.annotations = anns;
   // 保留未知附加字段（__order__ 除外）
   if (state.fields) {
     for (const k of (state.fields.__order__ || [])) {
@@ -1207,6 +1555,83 @@ function bindFormEvents() {
       toast(`已提取 ${colors.length} 主色`, 'ok');
     } catch (e) { toast(e.message, 'err'); }
   };
+
+  // 大图标注相关按钮
+  $('#btnAnnotateMode').onclick = () => {
+    if (state.pickingTargetIndex !== null) state.pickingTargetIndex = null;
+    state.annotateMode = !state.annotateMode;
+    updateAnnotateModeUI();
+    if (state.annotateMode) toast('采点模式已开启：在大图上直接点击即可新增标注点位', 'ok');
+    else toast('已退出采点模式');
+  };
+
+  $('#btnAddAnn').onclick = () => {
+    const list = $('#annList')._getList ? $('#annList')._getList() : [];
+    const info = state.current?.imageInfo;
+    const cx = info ? Math.round(info.width / 2) : 1000;
+    const cy = info ? Math.round(info.height / 2) : 1000;
+    const curZoom = osdViewer && osdViewer.viewport
+      ? Number((osdViewer.viewport.viewportToImageZoom(osdViewer.viewport.getZoom(true))).toFixed(1)) || 2.0
+      : 2.0;
+    const nextId = `ann-${(list.length + 1).toString().padStart(2, '0')}`;
+    list.push({
+      id: nextId,
+      type: 'point',
+      coord: [cx, cy],
+      title: `标注 ${list.length + 1}`,
+      desc: '',
+      level: 'primary',
+      zoomLevel: curZoom,
+    });
+    renderAnnotations(list);
+    markDirty();
+    highlightAnnCard(list.length - 1, true);
+    toast('已添加标注条目，可输入信息或点击「🎯 采点」调整位置', 'ok');
+  };
+
+  $('#btnPromptAnn').onclick = () => {
+    const cur = state.current;
+    const info = cur?.imageInfo;
+    const title = $('#f_title').value || cur?.imageRel?.split('/').pop() || '未命名图纸';
+    const intro = $('#f_intro').value || '';
+    const vision = ($('#visionList')._getList ? $('#visionList')._getList() : []).map(v => `- **${v.term}**：${v.desc}`).join('\n');
+    const promptText = `# 需求：为 AtlasCore/Gallery 描述文件生成【大图坐标标注 (annotations)】
+
+## 1. 当前图纸规格与信息
+- 图纸标题：${title}
+- 图像文件：${cur?.imageRel?.split('/').pop() || ''}
+- 原图真实像素尺寸：${info?.width || 0} × ${info?.height || 0} px
+- 物理尺寸：${$('#physW').value || info?.cmW || 0}cm × ${$('#physH').value || info?.cmH || 0}cm (DPI: ${info?.dpi || 300})
+- 制图思路与视觉要素：
+${intro}
+
+${vision}
+
+## 2. 坐标系统与计算基准
+- 基准坐标系：必须严格基于【原图物理像素尺寸 (Image Pixels)】，以图片左上角为原点 [0, 0]，向右为 X，向下为 Y。格式为 [X, Y] 正整数。
+- 坐标范围限制：X 必须在 [0 ~ ${info?.width || 0}]，Y 必须在 [0 ~ ${info?.height || 0}] 之间。
+
+## 3. 输出数据模型规范 (YAML annotations)
+请从上述制图思路中识别或推测关键地标、枢纽节点、重点工程区、古城门或特写区域，生成符合规范的 annotations YAML 代码块：
+
+\`\`\`yaml
+annotations:
+  - id: ann-01
+    type: point
+    coord: [X, Y]
+    title: 地标名称(6字以内)
+    desc: 详细工程/地理说明(1~2句话)
+    level: primary | accent | info
+    zoomLevel: 2.2
+\`\`\`
+`;
+    navigator.clipboard.writeText(promptText).then(() => {
+      toast('已复制标准 AI 标注提示词（包含当前图像尺寸与上下文）！', 'ok');
+    }).catch(() => {
+      toast('复制失败，请检查浏览器剪贴板权限', 'err');
+    });
+  };
+
   $('#btnSave').onclick = save;
 }
 

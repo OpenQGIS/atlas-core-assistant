@@ -2,10 +2,17 @@
 
 记录每次对外可感知的修改，新版本在前。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [2026-10-06] 大图坐标标注 (annotations) 窗口点击交互采点与双端读写
 
 ### 新增
 
+- **大图坐标标注（annotations）**：支持原图物理像素坐标 `[X, Y]` 交互采点与多点位标注管理
+- **视口物理像素游标**：鼠标在大图悬停移动时实时显示真实图像像素 `[X, Y]`
+- **「📍 采点标注」模式**：在大图任意位置点击即可直接新增或拾取更新标注坐标
+- **OpenSeadragon 画布动画标记（Pin Overlays）**：分级色彩（primary 核心主线、accent 工艺亮点、info 辅助注记）与脉冲扩散动画；点击针脚与表单双向聚焦联动
+- **标注表单卡片**：支持标注 id、title、level、type、coord、zoomLevel 及 desc 结构化编辑
+- **AI 提示词一键生成（「📋 复制 AI 提词」）**：自动提取图像尺寸、DPI、现有文本并生成符合 V-2026.10.06 规范的标注 Prompt
+- **双端 YAML 解析与序列化**：`editor.py` 与 `static/md.js` 同步支持 `annotations` 复杂嵌套结构
 - 编辑状态灯：底部保存栏绿灯「未修改」／红灯呼吸闪烁「有修改未保存」，实时反映编辑状态
 - CHANGELOG.md 更新日志（本文件），README 同步更新功能描述
 

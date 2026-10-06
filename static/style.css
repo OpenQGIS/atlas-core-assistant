@@ -377,3 +377,162 @@ dialog h3 { margin: 0 0 12px; color: var(--accent-dim); }
 ::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ================= 大图标注 (Annotations) 交互与覆盖层 ================= */
+
+#btnAnnotateMode.active {
+  background: var(--btnp1h);
+  border-color: var(--accent);
+  color: var(--accent-dim);
+  font-weight: 600;
+  box-shadow: 0 0 8px var(--accent-soft);
+}
+#cursorCoord {
+  font-family: var(--mono);
+  color: var(--muted);
+  user-select: none;
+}
+
+/* OSD 画布 Pin 覆盖物 */
+.osd-pin {
+  position: absolute;
+  cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 10;
+  transition: transform 0.15s ease;
+}
+.osd-pin:hover {
+  transform: translate(-50%, -55%) scale(1.1);
+  z-index: 20;
+}
+.osd-pin .pin-marker {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.osd-pin .pin-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pin-color, #e05638);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.45);
+  z-index: 2;
+}
+.osd-pin .pin-pulse {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--pin-color, #e05638);
+  opacity: 0.35;
+  animation: pin-pulse-anim 2s infinite ease-out;
+  z-index: 1;
+}
+@keyframes pin-pulse-anim {
+  0% { transform: scale(0.5); opacity: 0.8; }
+  100% { transform: scale(2.0); opacity: 0; }
+}
+
+.osd-pin .pin-label {
+  margin-top: 2px;
+  background: rgba(15, 23, 34, 0.88);
+  backdrop-filter: blur(4px);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.2);
+  pointer-events: none;
+}
+
+.osd-pin.pin-primary { --pin-color: #ef4444; }
+.osd-pin.pin-accent { --pin-color: #3b82f6; }
+.osd-pin.pin-info { --pin-color: #10b981; }
+
+/* 右侧标注卡片 */
+#secAnnotations h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ann-card {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.ann-card.highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.ann-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.ann-head .ann-idx {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ann-input-title {
+  flex: 1;
+  font-weight: 600;
+  min-width: 80px;
+}
+.ann-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  text-transform: uppercase;
+}
+.ann-badge.level-primary { color: #ef4444; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.08); }
+.ann-badge.level-accent { color: #3b82f6; border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.08); }
+.ann-badge.level-info { color: #10b981; border-color: rgba(16,185,129,0.4); background: rgba(16,185,129,0.08); }
+.ann-badge.type-badge { color: var(--muted); border-color: var(--border2); }
+
+.ann-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ann-coord-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.ann-coord-row input {
+  width: 90px;
+  font-family: var(--mono);
+}
+.ann-input-desc {
+  width: 100%;
+  font-size: 12px;
+  min-height: 44px;
+}
+.ann-btn-del {
+  padding: 0 6px !important;
+  color: var(--muted);
+}
+.ann-btn-del:hover {
+  color: var(--err);
+}
+
