@@ -47,6 +47,7 @@ const state = {
   annotateMode: false,
   pickingTargetIndex: null,
 };
+window.state = state;
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -167,6 +168,12 @@ function makeServerAdapter() {
     async openExternal(rel) {
       await api('/api/open', postBody({ rel }));
     },
+    async browseDir(initialDir) {
+      return await api('/api/pick_dir', postBody({ initial_dir: initialDir || '' }));
+    },
+    async openExplorer(path) {
+      return await api('/api/open_explorer', postBody({ path: path || '' }));
+    },
     thumbUrl(rel, info) {
       return `/api/thumb?rel=${encodeURIComponent(rel)}&max=1024&v=${(info && info.mtime) || ''}`;
     },
@@ -271,11 +278,30 @@ function renderStageTabs() {
   nav.innerHTML = '';
   STAGES.forEach(([key, label]) => {
     const b = document.createElement('button');
-    b.textContent = `${key.slice(0, 2)} ${label}`;
+    b.innerHTML = `<span>${key.slice(0, 2)} ${label}</span><span class="stage-dot empty" data-dot="${key}"></span>`;
     b.dataset.stage = key;
     if (key === state.stage) b.classList.add('active');
     b.onclick = () => loadStage(key);
     nav.appendChild(b);
+  });
+}
+
+// 刷新三个池子（待制池/待审池/成品库）的非空指示灯
+async function refreshStageDots() {
+  if (!adapter) return;
+  STAGES.forEach(async ([key, label]) => {
+    try {
+      const items = await adapter.listStage(key);
+      const dot = $(`#stageTabs .stage-dot[data-dot="${key}"]`);
+      const btn = $(`#stageTabs button[data-stage="${key}"]`);
+      if (dot) {
+        const hasItems = items && items.length > 0;
+        dot.classList.toggle('empty', !hasItems);
+        if (btn) {
+          btn.title = hasItems ? `${key} (${label})：共有 ${items.length} 个作品` : `${key} (${label})：暂无图片`;
+        }
+      }
+    } catch (_) {}
   });
 }
 
@@ -295,6 +321,8 @@ async function loadStage(stage) {
     renderList();
     toast(e.message, 'err');
   }
+  // 加载后同步刷新所有指示灯状态
+  refreshStageDots();
 }
 
 /* ---------------- 目录树侧栏 ---------------- */
@@ -423,7 +451,7 @@ async function openItem(it) {
     loadViewer(data.imageRel, data.imageInfo);
     renderList();
     $('#rawText').value = data.raw || '';
-    $('#rawBox').open = false;
+    requestAnimationFrame(() => updateRawGutter());
   } catch (e) {
     toast(e.message, 'err');
   }
@@ -445,7 +473,7 @@ function ensureOsd() {
     maxZoomPixelRatio: 6,
     minZoomImageRatio: 0.03,
     visibilityRatio: 0.5,
-    gestureSettingsMouse: { dblClickToZoom: false },
+    gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: false },
   });
   osdViewer.addHandler('tile-drawn', () => {
     hideUnderlaySoon();
@@ -470,17 +498,28 @@ function ensureOsd() {
   let raf = 0;
   const upd = () => {
     if (raf) return;
-    raf = requestAnimationFrame(() => { raf = 0; $('#zoomLevel').textContent = imageZoomPct() + '%'; });
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      $('#zoomLevel').textContent = imageZoomPct() + '%';
+      const list = $('#annList')?._getList ? $('#annList')._getList() : (state.fields?.annotations || []);
+      if (list && list.length && typeof updateSvgShapes === 'function') {
+        updateSvgShapes(list);
+      }
+    });
   };
   osdViewer.addHandler('zoom', upd);
+  osdViewer.addHandler('pan', upd);
   osdViewer.addHandler('animation', upd);
+  osdViewer.addHandler('update-viewport', upd);
 
   // 采点交互：点击大图添加或更新标注
   osdViewer.addHandler('canvas-click', e => {
-    if (!e.quick) return;
-    if (!state.current) return;
-    if (!state.annotateMode && state.pickingTargetIndex === null) return;
-    if (e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest('.osd-pin')) return;
+    if (!e.quick || !state.current) return;
+
+    // 若处于标注采点模式或点位更新模式，优先阻止 OSD 默认点击行为（防止触发缩放）
+    if (state.annotateMode || state.pickingTargetIndex !== null) {
+      e.preventDefaultAction = true;
+    }
 
     const vpPoint = osdViewer.viewport.pointFromPixel(e.position);
     const imgPoint = osdViewer.viewport.viewportToImageCoordinates(vpPoint);
@@ -491,16 +530,96 @@ function ensureOsd() {
     const y = Math.round(imgPoint.y);
     if (imgW && imgH && (x < 0 || x > imgW || y < 0 || y > imgH)) return;
 
+    // Alt + 鼠标点击：如果有当前激活/选中的标注，直接将点位或几何中心瞬移到点击坐标
+    if (e.originalEvent && e.originalEvent.altKey) {
+      e.preventDefaultAction = true;
+      const activeCard = $('#annList .ann-card.highlight');
+      const activeIdx = activeCard ? parseInt(activeCard.dataset.idx, 10) : -1;
+      const list = $('#annList')._getList ? $('#annList')._getList() : [];
+      if (activeIdx >= 0 && list[activeIdx]) {
+        const curAnn = list[activeIdx];
+        if (curAnn.type === 'point' || !curAnn.type) {
+          curAnn.coord = [x, y];
+          toast(`[Alt快捷定位] 已将标注 #${activeIdx + 1}「${curAnn.title || curAnn.id}」移动至 [${x}, ${y}]`, 'ok');
+        } else if (curAnn.type === 'rect' && Array.isArray(curAnn.bbox) && curAnn.bbox.length === 4) {
+          const bw = curAnn.bbox[2];
+          const bh = curAnn.bbox[3];
+          curAnn.bbox[0] = Math.max(0, Math.round(x - bw / 2));
+          curAnn.bbox[1] = Math.max(0, Math.round(y - bh / 2));
+          curAnn.coord = [x, y];
+          toast(`[Alt快捷定位] 已将矩形 #${activeIdx + 1} 中心移动至 [${x}, ${y}]`, 'ok');
+        } else if (curAnn.type === 'area' && Array.isArray(curAnn.polygon) && curAnn.polygon.length) {
+          const cp = getPolygonCentroid(curAnn.polygon) || curAnn.polygon[0];
+          const dx = x - cp[0];
+          const dy = y - cp[1];
+          curAnn.polygon = curAnn.polygon.map(([px, py]) => [px + dx, py + dy]);
+          curAnn.coord = [x, y];
+          toast(`[Alt快捷定位] 已将多边形 #${activeIdx + 1} 整体移至 [${x}, ${y}]`, 'ok');
+        } else if (curAnn.type === 'path' && Array.isArray(curAnn.polyline) && curAnn.polyline.length) {
+          const mp = getPolylineMidpoint(curAnn.polyline) || curAnn.polyline[0];
+          const dx = x - mp[0];
+          const dy = y - mp[1];
+          curAnn.polyline = curAnn.polyline.map(([px, py]) => [px + dx, py + dy]);
+          curAnn.coord = [x, y];
+          toast(`[Alt快捷定位] 已将折线 #${activeIdx + 1} 整体移至 [${x}, ${y}]`, 'ok');
+        }
+        markDirty();
+
+        // 局部更新卡片输入框
+        const ix = activeCard.querySelector('.ann-input-x');
+        const iy = activeCard.querySelector('.ann-input-y');
+        if (ix && curAnn.coord) ix.value = curAnn.coord[0];
+        if (iy && curAnn.coord) iy.value = curAnn.coord[1];
+
+        const taGeom = activeCard.querySelector('.ann-geom-textarea');
+        if (taGeom) {
+          if (curAnn.type === 'area' && curAnn.polygon) taGeom.value = JSON.stringify(curAnn.polygon);
+          else if (curAnn.type === 'path' && curAnn.polyline) taGeom.value = JSON.stringify(curAnn.polyline);
+          else if (curAnn.type === 'rect' && curAnn.bbox) taGeom.value = JSON.stringify(curAnn.bbox);
+        }
+
+        renderOsdOverlays();
+        highlightAnnCard(activeIdx, false);
+        return;
+      }
+
+      // 未选中标注卡片时回退为开发者坐标复制
+      const coordStr = `[${x}, ${y}]`;
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(coordStr).catch(() => {});
+      console.log(`%c[DevTools] %c拾取绝对像素坐标: %c${coordStr}`, 'background:#111;color:#ff9800;font-weight:bold;padding:2px 4px', 'color:#aaa', 'color:#00e676;font-weight:bold');
+      toast(`[DevTools] 拾取坐标: ${coordStr}`, 'ok');
+      return;
+    }
+
+    if (!state.annotateMode && state.pickingTargetIndex === null) return;
+    if (e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest('.osd-pin, .ann-vertex-handle')) return;
+
     if (state.pickingTargetIndex !== null) {
       const list = $('#annList')._getList ? $('#annList')._getList() : [];
-      if (list[state.pickingTargetIndex]) {
-        list[state.pickingTargetIndex].coord = [x, y];
+      const curAnn = list[state.pickingTargetIndex];
+      if (curAnn) {
         const idx = state.pickingTargetIndex;
-        state.pickingTargetIndex = null;
-        updateAnnotateModeUI();
-        renderAnnotations(list);
+        if (curAnn.type === 'area') {
+          curAnn.polygon = Array.isArray(curAnn.polygon) ? curAnn.polygon : [];
+          curAnn.polygon.push([x, y]);
+          toast(`已向多边形追加第 ${curAnn.polygon.length} 个顶点: [${x}, ${y}]`, 'ok');
+        } else if (curAnn.type === 'path') {
+          curAnn.polyline = Array.isArray(curAnn.polyline) ? curAnn.polyline : [];
+          curAnn.polyline.push([x, y]);
+          toast(`已向路线追加第 ${curAnn.polyline.length} 个节点: [${x}, ${y}]`, 'ok');
+        } else if (curAnn.type === 'rect') {
+          state.pickingTargetIndex = null;
+          updateAnnotateModeUI();
+          startRectDragSelect(idx);
+          return;
+        } else {
+          curAnn.coord = [x, y];
+          state.pickingTargetIndex = null;
+          updateAnnotateModeUI();
+          toast(`已更新标注 #${idx + 1} 坐标为 [${x}, ${y}]`, 'ok');
+        }
         markDirty();
-        toast(`已更新标注 #${idx + 1} 坐标为 [${x}, ${y}]`, 'ok');
+        renderAnnotations(list);
         highlightAnnCard(idx);
       }
       return;
@@ -508,7 +627,7 @@ function ensureOsd() {
 
     if (state.annotateMode) {
       const list = $('#annList')._getList ? $('#annList')._getList() : [];
-      const nextId = `ann-${(list.length + 1).toString().padStart(2, '0')}`;
+      const nextId = generateAnnId(list.length, 'point');
       const curZoom = Number((osdViewer.viewport.viewportToImageZoom(osdViewer.viewport.getZoom(true))).toFixed(1)) || 2.0;
       const newAnn = {
         id: nextId,
@@ -522,8 +641,8 @@ function ensureOsd() {
       list.push(newAnn);
       renderAnnotations(list);
       markDirty();
-      toast(`已在 [${x}, ${y}] 添加新标注`, 'ok');
-      highlightAnnCard(list.length - 1, true);
+      toast(`已在 [${x}, ${y}] 添加标注 #${nextId}`, 'ok');
+      highlightAnnCard(list.length - 1, false);
     }
   });
 
@@ -551,6 +670,7 @@ function ensureOsd() {
     $('#cursorCoord').textContent = '';
   });
 
+  window.osdViewer = osdViewer;
   return osdViewer;
 }
 
@@ -626,6 +746,13 @@ function bindViewer() {
     if (!osdViewer) return;
     b.dataset.zoom === 'fit' ? osdViewer.viewport.goHome() : zoom100();
   });
+  const zoomLbl = $('#zoomLevel');
+  if (zoomLbl) {
+    zoomLbl.onclick = () => {
+      if (!osdViewer) return;
+      zoom100();
+    };
+  }
   $('#btnOpenOrig').onclick = async () => {
     if (!state.current || adapter.mode !== 'server') return;
     try { await adapter.openExternal(state.current.imageRel); }
@@ -669,6 +796,7 @@ function fillForm() {
   const f = state.fields, b = state.body, info = state.current.imageInfo;
   $('#formEmpty').hidden = true;
   $('#formBody').hidden = false;
+  $('#formTabs').hidden = false;
   $('#saveBar').hidden = false;
   $('#secDraftTip').hidden = !state.current.isDraft;
   if (state.current.isDraft) $('#draftName').textContent = state.current.mdRel.split('/').pop();
@@ -724,6 +852,9 @@ function fillForm() {
   clearDirty();
   setSaveMsg('', '');
   refreshCombos();   // fillForm 重建 physComp 选项并赋值后，同步自定义下拉显示
+
+  const activeTab = state.activeTab || 'tabMeta';
+  switchTab(activeTab);
 }
 
 function renderImgInfo(info) {
@@ -1028,6 +1159,19 @@ function renderVision(items) {
 
 /* ================= 大图标注 (Annotations) 交互与管理 ================= */
 
+// 根据类型返回标准类型缩写后缀：P (Point), L (Line/Path), A (Area), R (Rect)
+function getAnnTypeSuffix(type) {
+  const map = { point: 'P', path: 'L', area: 'A', rect: 'R' };
+  return map[type] || 'P';
+}
+
+// 方案 1：生成如 01-P, 02-L, 03-A, 04-R 的规范 ID
+function generateAnnId(index, type = 'point') {
+  const num = (index + 1).toString().padStart(2, '0');
+  const sfx = getAnnTypeSuffix(type);
+  return `${num}-${sfx}`;
+}
+
 function updateAnnotateModeUI() {
   const btn = $('#btnAnnotateMode');
   const isPicking = state.pickingTargetIndex !== null;
@@ -1035,21 +1179,155 @@ function updateAnnotateModeUI() {
   if (btn) {
     btn.classList.toggle('active', isActive);
     if (isPicking) {
-      btn.innerHTML = `🎯 拾取中(#${state.pickingTargetIndex + 1})…`;
+      btn.title = `正在拾取 #${state.pickingTargetIndex + 1} 坐标：点击大图完成更新`;
+      btn.innerHTML = `<svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg> <span>拾取中</span>`;
     } else if (state.annotateMode) {
-      btn.innerHTML = `📍 采点中(点击大图)`;
+      btn.title = '采点模式已开启：点击大图任意位置即可新增标注点位（再次点击退出）';
+      btn.innerHTML = `<svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> <span>采点中</span>`;
     } else {
-      btn.innerHTML = `📍 采点标注`;
+      btn.title = '开启采点模式：在大图上直接点击即可新增标注点位';
+      btn.innerHTML = `<svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> <span>采点标注</span>`;
     }
   }
   if (osdViewer && osdViewer.canvas) {
     osdViewer.canvas.style.cursor = isActive ? 'crosshair' : '';
+    if (!isActive) {
+      osdViewer.setMouseNavEnabled(true);
+      // 将焦点归还画布以确保滚轮/快捷键无缝生效
+      if (document.activeElement && document.activeElement.tagName === 'BODY') {
+        osdViewer.canvas.focus?.();
+      }
+    }
   }
 }
 
+// 矩形交互式鼠标拉框选择器 (Drag Bounding Box)
+function startRectDragSelect(annIndex) {
+  if (!osdViewer || !osdViewer.canvas) return;
+  toast('已开启矩形拉框：请在大图上按住鼠标左键并拖拽框选目标区域', 'ok');
+  osdViewer.setMouseNavEnabled(false);
+  osdViewer.canvas.style.cursor = 'crosshair';
+
+  let rubber = osdViewer.canvas.querySelector('.osd-rubberband-box');
+  if (!rubber) {
+    rubber = document.createElement('div');
+    rubber.className = 'osd-rubberband-box';
+    osdViewer.canvas.appendChild(rubber);
+  }
+
+  let isDrawing = false;
+  let startPx = null;
+
+  const tracker = new OpenSeadragon.MouseTracker({
+    element: osdViewer.canvas,
+    pressHandler: (e) => {
+      isDrawing = true;
+      startPx = e.position;
+      rubber.style.display = 'block';
+      rubber.style.left = `${startPx.x}px`;
+      rubber.style.top = `${startPx.y}px`;
+      rubber.style.width = '0px';
+      rubber.style.height = '0px';
+    },
+    dragHandler: (e) => {
+      if (!isDrawing || !startPx) return;
+      const curPx = e.position;
+      const left = Math.min(startPx.x, curPx.x);
+      const top = Math.min(startPx.y, curPx.y);
+      const width = Math.abs(curPx.x - startPx.x);
+      const height = Math.abs(curPx.y - startPx.y);
+      rubber.style.left = `${left}px`;
+      rubber.style.top = `${top}px`;
+      rubber.style.width = `${width}px`;
+      rubber.style.height = `${height}px`;
+    },
+    releaseHandler: (e) => {
+      if (!isDrawing) return;
+      isDrawing = false;
+      rubber.style.display = 'none';
+      tracker.destroy();
+      osdViewer.setMouseNavEnabled(true);
+      osdViewer.canvas.style.cursor = '';
+
+      const endPx = e.position;
+      const vp1 = osdViewer.viewport.pointFromPixel(startPx);
+      const vp2 = osdViewer.viewport.pointFromPixel(endPx);
+      const img1 = osdViewer.viewport.viewportToImageCoordinates(vp1);
+      const img2 = osdViewer.viewport.viewportToImageCoordinates(vp2);
+
+      const minX = Math.round(Math.min(img1.x, img2.x));
+      const minY = Math.round(Math.min(img1.y, img2.y));
+      const bw = Math.round(Math.abs(img2.x - img1.x));
+      const bh = Math.round(Math.abs(img2.y - img1.y));
+
+      if (bw < 10 || bh < 10) {
+        toast('拉框区域过小，已取消', 'warn');
+        return;
+      }
+
+      const list = $('#annList')._getList ? $('#annList')._getList() : [];
+      const ann = list[annIndex];
+      if (ann) {
+        ann.bbox = [minX, minY, bw, bh];
+        ann.coord = [Math.round(minX + bw / 2), Math.round(minY + bh / 2)];
+        markDirty();
+        renderAnnotations(list);
+        highlightAnnCard(annIndex);
+        toast(`矩形范围已标定: [${minX}, ${minY}, ${bw}, ${bh}]`, 'ok');
+      }
+    }
+  });
+}
+
+// 计算多边形质心
+function getPolygonCentroid(pts) {
+  if (!pts || !pts.length) return null;
+  let sx = 0, sy = 0;
+  pts.forEach(p => { sx += p[0]; sy += p[1]; });
+  return [Math.round(sx / pts.length), Math.round(sy / pts.length)];
+}
+
+// 计算折线几何中点
+function getPolylineMidpoint(pts) {
+  if (!pts || !pts.length) return null;
+  const midIdx = Math.floor(pts.length / 2);
+  return pts[midIdx];
+}
+
+// 获取各类型几何图形的文字标签锚点坐标 [x, y]
+function getShapeAnchorCoord(ann) {
+  if (!ann) return null;
+  if (ann.coord && Array.isArray(ann.coord) && ann.coord.length >= 2) {
+    return ann.coord;
+  }
+  if (ann.type === 'rect' && Array.isArray(ann.bbox) && ann.bbox.length === 4) {
+    return [Math.round(ann.bbox[0] + ann.bbox[2] / 2), Math.round(ann.bbox[1] + ann.bbox[3] / 2)];
+  }
+  if (ann.type === 'area' && Array.isArray(ann.polygon) && ann.polygon.length) {
+    return getPolygonCentroid(ann.polygon);
+  }
+  if (ann.type === 'path' && Array.isArray(ann.polyline) && ann.polyline.length) {
+    return getPolylineMidpoint(ann.polyline);
+  }
+  return null;
+}
+
 function focusAnnotation(ann) {
-  if (!osdViewer || !osdViewer.viewport || !ann || !ann.coord || ann.coord.length < 2) return;
-  const vpPt = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(ann.coord[0], ann.coord[1]));
+  if (!osdViewer || !osdViewer.viewport || !ann) return;
+  let vpPt = null;
+  if (ann.coord && ann.coord.length >= 2) {
+    vpPt = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(ann.coord[0], ann.coord[1]));
+  } else if (ann.bbox && ann.bbox.length === 4) {
+    vpPt = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(ann.bbox[0] + ann.bbox[2] / 2, ann.bbox[1] + ann.bbox[3] / 2));
+  } else if (ann.polygon && ann.polygon.length) {
+    const cp = getPolygonCentroid(ann.polygon) || ann.polygon[0];
+    vpPt = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(cp[0], cp[1]));
+  } else if (ann.polyline && ann.polyline.length) {
+    const mp = getPolylineMidpoint(ann.polyline) || ann.polyline[0];
+    vpPt = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(mp[0], mp[1]));
+  }
+  if (!vpPt) return;
+
   const targetZoom = ann.zoomLevel
     ? osdViewer.viewport.imageToViewportZoom(ann.zoomLevel)
     : Math.max(osdViewer.viewport.getZoom(true), osdViewer.viewport.imageToViewportZoom(2.0));
@@ -1058,6 +1336,7 @@ function focusAnnotation(ann) {
 }
 
 function highlightAnnCard(idx, focusTitle = false) {
+  switchTab('tabAnnotations');
   const card = $(`#annList .ann-card[data-idx="${idx}"]`);
   if (!card) return;
   $$('#annList .ann-card').forEach(c => c.classList.remove('highlight'));
@@ -1069,9 +1348,348 @@ function highlightAnnCard(idx, focusTitle = false) {
   }
 }
 
+// SVG 叠加图层容器与拖拽状态
+let osdSvgOverlayEl = null;
+let activeDraggingVertex = null; // { annIndex, type: 'polygon'|'polyline'|'bbox', vertexIndex, isBoxEnd }
+
+function ensureSvgOverlay() {
+  if (osdSvgOverlayEl && osdSvgOverlayEl.parentElement) return osdSvgOverlayEl;
+  if (!osdViewer || !osdViewer.canvas) return null;
+  const old = osdViewer.canvas.querySelector('.osd-overlay-svg');
+  if (old) old.remove();
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'osd-overlay-svg');
+  svg.innerHTML = `
+    <defs>
+      <pattern id="annHatchPattern" width="10" height="10" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="10" stroke="#f59e0b" stroke-width="2.5" stroke-opacity="0.45" />
+      </pattern>
+    </defs>
+    <g id="osdShapesLayer"></g>
+    <g id="osdHandlesLayer"></g>
+  `;
+  osdViewer.canvas.appendChild(svg);
+  osdSvgOverlayEl = svg;
+  return svg;
+}
+
+function updateSvgShapes(list) {
+  const svg = ensureSvgOverlay();
+  if (!svg || !osdViewer || !osdViewer.viewport) return;
+  const shapesLayer = svg.querySelector('#osdShapesLayer');
+  const handlesLayer = svg.querySelector('#osdHandlesLayer');
+  if (!shapesLayer || !handlesLayer) return;
+  shapesLayer.innerHTML = '';
+  handlesLayer.innerHTML = '';
+
+  const activeCard = $('#annList .ann-card.highlight');
+  const activeIdx = activeCard ? parseInt(activeCard.dataset.idx, 10) : -1;
+
+  list.forEach((ann, idx) => {
+    const isSelected = (idx === activeIdx);
+    const lvl = ann.level || 'primary';
+
+    // 1. 区域多边形 (Area / Polygon)
+    if (ann.type === 'area' && Array.isArray(ann.polygon) && ann.polygon.length >= 2) {
+      const pts = ann.polygon.map(pt => {
+        const vp = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(pt[0], pt[1]));
+        const px = osdViewer.viewport.pixelFromPoint(vp, true);
+        return `${px.x.toFixed(1)},${px.y.toFixed(1)}`;
+      }).join(' ');
+
+      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      poly.setAttribute('points', pts);
+      const isHatch = (ann.style && ann.style.hatch) !== false;
+      const isDash = (ann.style && ann.style.dash) !== false;
+      poly.setAttribute('class', `ann-svg-shape level-${lvl} ${isHatch ? 'has-hatch' : ''} ${isDash ? 'is-dash' : ''} ${isSelected ? 'active' : ''}`);
+      poly.setAttribute('stroke-width', isSelected ? '3' : '2');
+      poly.onclick = (e) => {
+        e.stopPropagation();
+        highlightAnnCard(idx);
+        focusAnnotation(ann);
+      };
+      shapesLayer.appendChild(poly);
+
+      // 若处于选中状态，渲染各顶点拖拽手柄
+      if (isSelected) {
+        ann.polygon.forEach((pt, vi) => {
+          const vp = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(pt[0], pt[1]));
+          const px = osdViewer.viewport.pixelFromPoint(vp, true);
+          const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          handle.setAttribute('cx', px.x);
+          handle.setAttribute('cy', px.y);
+          handle.setAttribute('r', '6');
+          handle.setAttribute('class', 'ann-vertex-handle');
+          handle.setAttribute('title', `拖拽微调顶点 #${vi + 1} [${pt[0]}, ${pt[1]}]，双击删除顶点`);
+          bindVertexDrag(handle, idx, 'polygon', vi);
+          // 双击删除多边形顶点
+          handle.ondblclick = (e) => {
+            e.stopPropagation();
+            if (ann.polygon.length <= 3) {
+              toast('多边形至少保留 3 个顶点', 'warn');
+              return;
+            }
+            ann.polygon.splice(vi, 1);
+            markDirty();
+            renderAnnotations(list);
+            highlightAnnCard(idx);
+            toast(`已删除多边形顶点 #${vi + 1}`, 'ok');
+          };
+          handlesLayer.appendChild(handle);
+        });
+
+        // 边中点加点手柄（点击直接在当前边插入新顶点）
+        ann.polygon.forEach((pt, vi) => {
+          const nextPt = ann.polygon[(vi + 1) % ann.polygon.length];
+          const midX = Math.round((pt[0] + nextPt[0]) / 2);
+          const midY = Math.round((pt[1] + nextPt[1]) / 2);
+          const vp = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(midX, midY));
+          const px = osdViewer.viewport.pixelFromPoint(vp, true);
+          const midHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          midHandle.setAttribute('cx', px.x);
+          midHandle.setAttribute('cy', px.y);
+          midHandle.setAttribute('r', '4');
+          midHandle.setAttribute('class', 'ann-mid-handle');
+          midHandle.setAttribute('title', '点击在此插入新顶点');
+          midHandle.onclick = (e) => {
+            e.stopPropagation();
+            ann.polygon.splice(vi + 1, 0, [midX, midY]);
+            markDirty();
+            renderAnnotations(list);
+            highlightAnnCard(idx);
+            toast(`已在多边形边中点插入新顶点`, 'ok');
+          };
+          handlesLayer.appendChild(midHandle);
+        });
+      }
+    }
+
+    // 2. 矩形特写 (Rect / bbox)
+    if (ann.type === 'rect' && Array.isArray(ann.bbox) && ann.bbox.length === 4) {
+      const [bx, by, bw, bh] = ann.bbox;
+      const vp1 = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(bx, by));
+      const vp2 = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(bx + bw, by + bh));
+      const px1 = osdViewer.viewport.pixelFromPoint(vp1, true);
+      const px2 = osdViewer.viewport.pixelFromPoint(vp2, true);
+
+      const rx = Math.min(px1.x, px2.x);
+      const ry = Math.min(px1.y, px2.y);
+      const rw = Math.abs(px2.x - px1.x);
+      const rh = Math.abs(px2.y - px1.y);
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', rx);
+      rect.setAttribute('y', ry);
+      rect.setAttribute('width', rw);
+      rect.setAttribute('height', rh);
+      rect.setAttribute('class', `ann-svg-shape level-${lvl} is-dash ${isSelected ? 'active' : ''}`);
+      rect.setAttribute('stroke-width', isSelected ? '2.5' : '1.5');
+      rect.onclick = (e) => {
+        e.stopPropagation();
+        highlightAnnCard(idx);
+        focusAnnotation(ann);
+      };
+      shapesLayer.appendChild(rect);
+
+      if (isSelected) {
+        // 矩形左上与右下角拖拽变形手柄
+        const corners = [
+          { cx: rx, cy: ry, isEnd: false, tip: '拖拽调整矩形起点' },
+          { cx: rx + rw, cy: ry + rh, isEnd: true, tip: '拖拽调整矩形宽高' }
+        ];
+        corners.forEach((c) => {
+          const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          handle.setAttribute('cx', c.cx);
+          handle.setAttribute('cy', c.cy);
+          handle.setAttribute('r', '6');
+          handle.setAttribute('class', 'ann-vertex-handle');
+          handle.setAttribute('title', c.tip);
+          bindVertexDrag(handle, idx, 'bbox', c.isEnd ? 1 : 0);
+          handlesLayer.appendChild(handle);
+        });
+      }
+    }
+
+    // 3. 路径/折线 (Path / Polyline)
+    if (ann.type === 'path' && Array.isArray(ann.polyline) && ann.polyline.length >= 2) {
+      const pts = ann.polyline.map(pt => {
+        const vp = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(pt[0], pt[1]));
+        const px = osdViewer.viewport.pixelFromPoint(vp, true);
+        return `${px.x.toFixed(1)},${px.y.toFixed(1)}`;
+      }).join(' ');
+
+      const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      polyline.setAttribute('points', pts);
+      polyline.setAttribute('fill', 'none');
+      polyline.setAttribute('class', `ann-svg-shape level-${lvl} ${isSelected ? 'active' : ''}`);
+      polyline.setAttribute('stroke-width', isSelected ? '3.5' : '2');
+      polyline.onclick = (e) => {
+        e.stopPropagation();
+        highlightAnnCard(idx);
+        focusAnnotation(ann);
+      };
+      shapesLayer.appendChild(polyline);
+
+      if (isSelected) {
+        // 节点拖拽与删除手柄
+        ann.polyline.forEach((pt, vi) => {
+          const vp = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(pt[0], pt[1]));
+          const px = osdViewer.viewport.pixelFromPoint(vp, true);
+          const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          handle.setAttribute('cx', px.x);
+          handle.setAttribute('cy', px.y);
+          handle.setAttribute('r', '6');
+          handle.setAttribute('class', 'ann-vertex-handle');
+          handle.setAttribute('title', `拖拽微调路线节点 #${vi + 1} [${pt[0]}, ${pt[1]}]，双击删除`);
+          bindVertexDrag(handle, idx, 'polyline', vi);
+          handle.ondblclick = (e) => {
+            e.stopPropagation();
+            if (ann.polyline.length <= 2) {
+              toast('路线至少保留 2 个节点', 'warn');
+              return;
+            }
+            ann.polyline.splice(vi, 1);
+            markDirty();
+            renderAnnotations(list);
+            highlightAnnCard(idx);
+            toast(`已删除路线节点 #${vi + 1}`, 'ok');
+          };
+          handlesLayer.appendChild(handle);
+        });
+
+        // 路线线段中点加点手柄
+        for (let vi = 0; vi < ann.polyline.length - 1; vi++) {
+          const pt = ann.polyline[vi];
+          const nextPt = ann.polyline[vi + 1];
+          const midX = Math.round((pt[0] + nextPt[0]) / 2);
+          const midY = Math.round((pt[1] + nextPt[1]) / 2);
+          const vp = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(midX, midY));
+          const px = osdViewer.viewport.pixelFromPoint(vp, true);
+          const midHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          midHandle.setAttribute('cx', px.x);
+          midHandle.setAttribute('cy', px.y);
+          midHandle.setAttribute('r', '4');
+          midHandle.setAttribute('class', 'ann-mid-handle');
+          midHandle.setAttribute('title', '点击在此插入新路线拐点');
+          midHandle.onclick = (e) => {
+            e.stopPropagation();
+            ann.polyline.splice(vi + 1, 0, [midX, midY]);
+            markDirty();
+            renderAnnotations(list);
+            highlightAnnCard(idx);
+            toast(`已在路线中段插入新节点`, 'ok');
+          };
+          handlesLayer.appendChild(midHandle);
+        }
+      }
+    }
+  });
+}
+
+// 将鼠标/指针事件精确转换为 OSD 视口坐标与原图像素坐标
+function eventToImageCoordinates(e) {
+  if (!osdViewer || !osdViewer.canvas || !osdViewer.viewport) return null;
+  const orig = e.originalEvent || e;
+  let clientX = orig.clientX;
+  let clientY = orig.clientY;
+  if (clientX === undefined && orig.touches && orig.touches.length > 0) {
+    clientX = orig.touches[0].clientX;
+    clientY = orig.touches[0].clientY;
+  }
+  if (clientX === undefined && orig.changedTouches && orig.changedTouches.length > 0) {
+    clientX = orig.changedTouches[0].clientX;
+    clientY = orig.changedTouches[0].clientY;
+  }
+  if (clientX === undefined) return null;
+
+  const rect = osdViewer.canvas.getBoundingClientRect();
+  const pt = new OpenSeadragon.Point(clientX - rect.left, clientY - rect.top);
+  const vpPoint = osdViewer.viewport.pointFromPixel(pt);
+  const imgPoint = osdViewer.viewport.viewportToImageCoordinates(vpPoint);
+  return {
+    vpPoint,
+    imgPoint,
+    x: Math.round(imgPoint.x),
+    y: Math.round(imgPoint.y)
+  };
+}
+
+// 绑定多边形/线段顶点的鼠标拖拽微调
+function bindVertexDrag(handleEl, annIndex, type, vertexIndex) {
+  let isDragging = false;
+  let vertexRafId = 0;
+  let pendingVertex = null;
+
+  new OpenSeadragon.MouseTracker({
+    element: handleEl,
+    pressHandler: () => {
+      isDragging = true;
+      handleEl.classList.add('dragging');
+      osdViewer.setMouseNavEnabled(false);
+    },
+    dragHandler: (e) => {
+      if (!isDragging) return;
+      const list = $('#annList')._getList ? $('#annList')._getList() : [];
+      const ann = list[annIndex];
+      if (!ann) return;
+
+      const coords = eventToImageCoordinates(e);
+      if (!coords) return;
+      const info = state.current?.imageInfo;
+      const maxX = info ? info.width : Infinity;
+      const maxY = info ? info.height : Infinity;
+      const nx = Math.max(0, Math.min(maxX, coords.x));
+      const ny = Math.max(0, Math.min(maxY, coords.y));
+
+      pendingVertex = [nx, ny];
+      if (!vertexRafId) {
+        vertexRafId = requestAnimationFrame(() => {
+          vertexRafId = 0;
+          if (!pendingVertex) return;
+          const [curX, curY] = pendingVertex;
+          if (type === 'polygon' && ann.polygon) {
+            ann.polygon[vertexIndex] = [curX, curY];
+          } else if (type === 'polyline' && ann.polyline) {
+            ann.polyline[vertexIndex] = [curX, curY];
+          } else if (type === 'bbox' && ann.bbox) {
+            if (vertexIndex === 0) {
+              const oldRight = ann.bbox[0] + ann.bbox[2];
+              const oldBottom = ann.bbox[1] + ann.bbox[3];
+              ann.bbox[0] = curX;
+              ann.bbox[1] = curY;
+              ann.bbox[2] = Math.max(10, oldRight - curX);
+              ann.bbox[3] = Math.max(10, oldBottom - curY);
+            } else {
+              ann.bbox[2] = Math.max(10, curX - ann.bbox[0]);
+              ann.bbox[3] = Math.max(10, curY - ann.bbox[1]);
+            }
+          }
+          updateSvgShapes(list);
+        });
+      }
+    },
+    releaseHandler: () => {
+      if (!isDragging) return;
+      isDragging = false;
+      if (vertexRafId) {
+        cancelAnimationFrame(vertexRafId);
+        vertexRafId = 0;
+      }
+      handleEl.classList.remove('dragging');
+      osdViewer.setMouseNavEnabled(true);
+      const list = $('#annList')._getList ? $('#annList')._getList() : [];
+      markDirty();
+      renderAnnotations(list);
+      highlightAnnCard(annIndex);
+      toast(`已更新几何节点坐标`, 'ok');
+    }
+  });
+}
+
 function makePinElement(ann, idx) {
   const el = document.createElement('div');
-  el.className = `osd-pin pin-${ann.level || 'primary'}`;
+  el.className = `osd-pin pin-${ann.level || 'primary'} is-draggable`;
   el.dataset.idx = idx;
   el.innerHTML = `
     <div class="pin-marker">
@@ -1080,7 +1698,99 @@ function makePinElement(ann, idx) {
     </div>
     <div class="pin-label">${esc(ann.title || ann.id || '标注')}</div>
   `;
-  el.title = `${ann.title || ann.id} [${(ann.coord || []).join(', ')}] - 点击在右侧查看`;
+  el.title = `${ann.title || ann.id} [${(ann.coord || []).join(', ')}] - 按住 Alt 拖拽平滑移动，点击右侧联动`;
+
+  // 支持直接按住点位 Pin 拖拽移动（RAF 节流高刷）
+  let isPinDragging = false;
+  let hasDragged = false;
+  let startX = 0;
+  let startY = 0;
+  let pinRafId = 0;
+  let pendingCoords = null;
+
+  new OpenSeadragon.MouseTracker({
+    element: el,
+    pressHandler: (e) => {
+      isPinDragging = true;
+      hasDragged = false;
+      const orig = e.originalEvent || e;
+      startX = orig.clientX || 0;
+      startY = orig.clientY || 0;
+      el.classList.add('is-dragging');
+      osdViewer.setMouseNavEnabled(false);
+    },
+    dragHandler: (e) => {
+      if (!isPinDragging) return;
+      const orig = e.originalEvent || e;
+      const dx = (orig.clientX || 0) - startX;
+      const dy = (orig.clientY || 0) - startY;
+      if (Math.hypot(dx, dy) > 3) {
+        hasDragged = true;
+      }
+      const coords = eventToImageCoordinates(e);
+      if (!coords) return;
+      const info = state.current?.imageInfo;
+      const maxX = info ? info.width : Infinity;
+      const maxY = info ? info.height : Infinity;
+      const nx = Math.max(0, Math.min(maxX, coords.x));
+      const ny = Math.max(0, Math.min(maxY, coords.y));
+
+      pendingCoords = [nx, ny];
+      if (!pinRafId) {
+        pinRafId = requestAnimationFrame(() => {
+          pinRafId = 0;
+          if (!pendingCoords) return;
+          const [curX, curY] = pendingCoords;
+          ann.coord = [curX, curY];
+          const card = $(`#annList .ann-card[data-idx="${idx}"]`);
+          if (card) {
+            const ix = card.querySelector('.ann-input-x');
+            const iy = card.querySelector('.ann-input-y');
+            if (ix && ix.value != curX) ix.value = curX;
+            if (iy && iy.value != curY) iy.value = curY;
+          }
+          const newVpPt = osdViewer.viewport.imageToViewportCoordinates(new OpenSeadragon.Point(curX, curY));
+          osdViewer.updateOverlay(el, newVpPt);
+        });
+      }
+    },
+    releaseHandler: () => {
+      if (!isPinDragging) return;
+      isPinDragging = false;
+      if (pinRafId) {
+        cancelAnimationFrame(pinRafId);
+        pinRafId = 0;
+      }
+      el.classList.remove('is-dragging');
+      osdViewer.setMouseNavEnabled(true);
+      if (hasDragged) {
+        markDirty();
+        renderOsdOverlays();
+        highlightAnnCard(idx);
+        toast(`标注 #${idx + 1} 已移动至 [${ann.coord[0]}, ${ann.coord[1]}]`, 'ok');
+      }
+    },
+    clickHandler: (e) => {
+      // 仅当没有发生位移拖拽时才响应点击联动与聚焦
+      if (hasDragged) return;
+      if (e.originalEvent) {
+        e.originalEvent.stopPropagation();
+      }
+      highlightAnnCard(idx, false);
+      focusAnnotation(ann);
+    }
+  });
+
+  return el;
+}
+
+// 针对多边形、矩形和路线等非单点类型渲染轻量悬浮标签（不显示侵入性的红点脉冲）
+function makeShapeTagElement(ann, idx) {
+  const el = document.createElement('div');
+  el.className = `osd-shape-tag level-${ann.level || 'primary'}`;
+  el.dataset.idx = idx;
+  el.innerHTML = `<div class="tag-label">${esc(ann.title || ann.id || '标注')}</div>`;
+  el.title = `${ann.title || ann.id} - 点击联动聚焦`;
   el.onclick = (e) => {
     e.stopPropagation();
     highlightAnnCard(idx, false);
@@ -1093,19 +1803,42 @@ function renderOsdOverlays() {
   if (!osdViewer || !osdViewer.viewport || !state.current) return;
   osdViewer.clearOverlays();
   const list = $('#annList')._getList ? $('#annList')._getList() : (state.fields?.annotations || []);
+
   list.forEach((ann, idx) => {
-    if (!ann || !ann.coord || !Array.isArray(ann.coord) || ann.coord.length < 2) return;
-    const pt = new OpenSeadragon.Point(ann.coord[0], ann.coord[1]);
-    const vpPt = osdViewer.viewport.imageToViewportCoordinates(pt);
-    const el = makePinElement(ann, idx);
-    osdViewer.addOverlay({
-      element: el,
-      location: vpPt,
-      placement: OpenSeadragon.Placement.CENTER,
-      checkResize: false
-    });
+    if (!ann) return;
+    if (ann.type === 'point') {
+      // 1. 点标注 (Point)：渲染地标 Pin（红点 + 脉冲 + 药丸标签）
+      if (!ann.coord || !Array.isArray(ann.coord) || ann.coord.length < 2) return;
+      const pt = new OpenSeadragon.Point(ann.coord[0], ann.coord[1]);
+      const vpPt = osdViewer.viewport.imageToViewportCoordinates(pt);
+      const el = makePinElement(ann, idx);
+      osdViewer.addOverlay({
+        element: el,
+        location: vpPt,
+        placement: OpenSeadragon.Placement.TOP_LEFT,
+        checkResize: false
+      });
+    } else {
+      // 2. 几何标注 (Area / Rect / Path)：在几何质心/锚点渲染极简浮动标签，绝不堆叠多余的红点脉冲！
+      const anchor = getShapeAnchorCoord(ann);
+      if (anchor) {
+        const pt = new OpenSeadragon.Point(anchor[0], anchor[1]);
+        const vpPt = osdViewer.viewport.imageToViewportCoordinates(pt);
+        const el = makeShapeTagElement(ann, idx);
+        osdViewer.addOverlay({
+          element: el,
+          location: vpPt,
+          placement: OpenSeadragon.Placement.TOP_LEFT,
+          checkResize: false
+        });
+      }
+    }
   });
+
+  // 3. 同步渲染点线面 SVG 矢量形状与交互控制手柄
+  updateSvgShapes(list);
 }
+
 
 function renderAnnotations(items) {
   const box = $('#annList');
@@ -1113,23 +1846,53 @@ function renderAnnotations(items) {
   const list = (items || []).map(it => ({
     id: it.id || '',
     type: it.type || 'point',
-    coord: Array.isArray(it.coord) ? [...it.coord] : [0, 0],
+    coord: Array.isArray(it.coord) && it.coord.length >= 2 ? [...it.coord] : (it.type === 'point' ? [0, 0] : undefined),
     title: it.title || '',
     desc: it.desc || '',
     level: it.level || 'primary',
     zoomLevel: it.zoomLevel !== undefined ? it.zoomLevel : 2.0,
     polygon: Array.isArray(it.polygon) ? it.polygon : undefined,
+    polyline: Array.isArray(it.polyline) ? it.polyline : undefined,
     bbox: Array.isArray(it.bbox) ? it.bbox : undefined,
     style: it.style && typeof it.style === 'object' ? it.style : undefined,
   }));
 
   const updateCount = () => {
-    $('#annCount').textContent = list.length;
+    const c = list.length;
+    $('#annCount').textContent = c;
+    const badge = $('#tabAnnBadge');
+    if (badge) {
+      badge.textContent = c;
+      badge.hidden = (c === 0);
+    }
   };
 
   const render = () => {
     box.innerHTML = '';
     list.forEach((ann, i) => {
+      const isPoint = (ann.type || 'point') === 'point';
+      const isRect = ann.type === 'rect';
+      const isArea = ann.type === 'area';
+      const isPath = ann.type === 'path';
+
+      // 动态判断顶部操作按钮的文案与图标
+      let actionBtnText = '采点';
+      let actionBtnTip = '在大图上重新点击拾取此点坐标';
+      let actionBtnSvg = `<svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>`;
+      if (isRect) {
+        actionBtnText = '拉框';
+        actionBtnTip = '在大图上鼠标拖拽重新框选矩形区域';
+        actionBtnSvg = `<svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`;
+      } else if (isArea) {
+        actionBtnText = '加顶点';
+        actionBtnTip = '在大图上点击追加新多边形顶点';
+        actionBtnSvg = `<svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 22 22 22"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`;
+      } else if (isPath) {
+        actionBtnText = '加节点';
+        actionBtnTip = '在大图上点击追加新路线折线节点';
+        actionBtnSvg = `<svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 19 8 7 14 15 20 5"/><line x1="12" y1="4" x2="12" y2="10"/><line x1="9" y1="7" x2="15" y2="7"/></svg>`;
+      }
+
       const card = document.createElement('div');
       card.className = 'ann-card';
       card.dataset.idx = i;
@@ -1139,13 +1902,21 @@ function renderAnnotations(items) {
           <input class="ann-input-title" type="text" value="${esc(ann.title)}" placeholder="标题 (如：马道枢纽)">
           <span class="ann-badge level-${ann.level || 'primary'}">${ann.level || 'primary'}</span>
           <span class="ann-badge type-badge">${ann.type || 'point'}</span>
-          <button class="btn mini ann-btn-focus" type="button" title="在大图上聚焦定位此点">🔍 聚焦</button>
-          <button class="btn mini ann-btn-pick" type="button" title="在大图上重新点击拾取此点坐标">🎯 采点</button>
-          <button class="btn mini ghost ann-btn-del" type="button" title="删除标注">×</button>
+          <button class="btn mini ann-btn-focus" type="button" title="在大图上聚焦定位此标注">
+            <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span>聚焦</span>
+          </button>
+          <button class="btn mini ann-btn-pick" type="button" title="${actionBtnTip}">
+            ${actionBtnSvg}
+            <span>${actionBtnText}</span>
+          </button>
+          <button class="btn mini ghost ann-btn-del" type="button" title="删除标注">
+            <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          </button>
         </div>
         <div class="ann-body">
           <div class="grid2">
-            <label class="field"><span>id</span><input class="ann-input-id" type="text" value="${esc(ann.id)}" placeholder="ann-01"></label>
+            <label class="field"><span>id</span><input class="ann-input-id" type="text" value="${esc(ann.id)}" placeholder="01-P"></label>
             <label class="field"><span>等级 level</span>
               <select class="ann-select-level">
                 <option value="primary" ${ann.level === 'primary' ? 'selected' : ''}>primary (核心主线)</option>
@@ -1155,10 +1926,10 @@ function renderAnnotations(items) {
             </label>
             <label class="field"><span>类型 type</span>
               <select class="ann-select-type">
-                <option value="point" ${ann.type === 'point' ? 'selected' : ''}>point (单点/地标)</option>
-                <option value="area" ${ann.type === 'area' ? 'selected' : ''}>area (工程段/多边形)</option>
-                <option value="rect" ${ann.type === 'rect' ? 'selected' : ''}>rect (矩形特写)</option>
-                <option value="path" ${ann.type === 'path' ? 'selected' : ''}>path (折线/路线)</option>
+                <option value="point" ${isPoint ? 'selected' : ''}>point (单点/地标)</option>
+                <option value="area" ${isArea ? 'selected' : ''}>area (工程段/多边形)</option>
+                <option value="rect" ${isRect ? 'selected' : ''}>rect (矩形特写)</option>
+                <option value="path" ${isPath ? 'selected' : ''}>path (折线/路线)</option>
               </select>
             </label>
             <label class="field"><span>聚焦倍率 zoomLevel</span>
@@ -1168,12 +1939,34 @@ function renderAnnotations(items) {
               </div>
             </label>
           </div>
-          <div class="ann-coord-row">
-            <span class="muted small">坐标 coord [X, Y]：</span>
-            <input class="ann-input-x" type="number" value="${ann.coord?.[0] ?? 0}" placeholder="X">
+
+          <!-- 坐标行：对 path 完全隐藏；对 point 显示核心点位坐标；对 area/rect 显示标签锚点(留空自动居中) -->
+          <div class="ann-coord-row" style="${isPath ? 'display:none' : ''}">
+            <span class="muted small">${isPoint ? '点位坐标 coord [X, Y]：' : '标签浮动锚点 coord [X, Y]（可选，留空则自动居中）：'}</span>
+            <input class="ann-input-x" type="number" value="${ann.coord?.[0] ?? ''}" placeholder="${isPoint ? '0' : '自动居中'}">
             <span class="muted small">,</span>
-            <input class="ann-input-y" type="number" value="${ann.coord?.[1] ?? 0}" placeholder="Y">
+            <input class="ann-input-y" type="number" value="${ann.coord?.[1] ?? ''}" placeholder="${isPoint ? '0' : '自动居中'}">
           </div>
+
+          <!-- 点、线、面专属几何配置面板 -->
+          <div class="ann-geom-row" style="${isPoint ? 'display:none' : ''}">
+            <div class="geom-header">
+              <span class="geom-title">${isArea ? '多边形顶点 polygon (顺/逆时针)' : (isRect ? '矩形范围 bbox [X, Y, W, H]' : '折线点列 polyline')}</span>
+              <button class="btn mini ann-btn-edit-geom" type="button" title="${isRect ? '在大图上鼠标拖拽重新框选' : '聚焦并激活顶点微调手柄'}">
+                <svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                <span>${isRect ? '重新拉框' : '微调手柄'}</span>
+              </button>
+            </div>
+            <textarea class="ann-input-geom" rows="2" placeholder="${isRect ? '[2600, 1750, 400, 300]' : '[[3400, 1850], [4860, 2100], [4650, 2350]]'}">${
+              isArea ? JSON.stringify(ann.polygon || []) : (isRect ? JSON.stringify(ann.bbox || []) : JSON.stringify(ann.polyline || []))
+            }</textarea>
+            ${isArea ? `
+            <div style="display:flex;gap:12px;font-size:11px;color:var(--muted);margin-top:2px">
+              <label><input type="checkbox" class="ann-chk-dash" ${(ann.style?.dash !== false) ? 'checked' : ''}> 工程虚线边框</label>
+              <label><input type="checkbox" class="ann-chk-hatch" ${(ann.style?.hatch !== false) ? 'checked' : ''}> 45°斜斑马线底纹</label>
+            </div>` : ''}
+          </div>
+
           <div class="field" style="margin-top:4px">
             <span>说明 desc</span>
             <textarea class="ann-input-desc" rows="2" placeholder="详细工程/地理说明（1~2句话）">${esc(ann.desc)}</textarea>
@@ -1205,9 +1998,39 @@ function renderAnnotations(items) {
 
       const selType = card.querySelector('.ann-select-type');
       selType.onchange = e => {
+        const oldType = ann.type;
         ann.type = e.target.value;
         card.querySelector('.ann-badge.type-badge').textContent = ann.type;
+
+        // 若当前 ID 为默认生成的格式（如 01-P、02-P 或 ann-01），自动联动将后缀更新为对应类型的缩写
+        const newSfx = getAnnTypeSuffix(ann.type);
+        const m = (ann.id || '').match(/^(\d{2})-[PLAR]$/i);
+        if (m) {
+          ann.id = `${m[1]}-${newSfx}`;
+        } else if (!ann.id || /^ann-\d+$/i.test(ann.id)) {
+          ann.id = generateAnnId(i, ann.type);
+        }
+
+        // 初始化几何默认值
+        const cx = ann.coord?.[0] || 1000;
+        const cy = ann.coord?.[1] || 1000;
+        if (ann.type === 'area' && (!ann.polygon || !ann.polygon.length)) {
+          ann.polygon = [[cx - 150, cy - 100], [cx + 150, cy - 100], [cx + 150, cy + 100], [cx - 150, cy + 100]];
+          ann.style = { dash: true, hatch: true };
+        } else if (ann.type === 'rect' && (!ann.bbox || !ann.bbox.length)) {
+          ann.bbox = [cx - 150, cy - 100, 300, 200];
+        } else if (ann.type === 'path') {
+          if (!ann.polyline || !ann.polyline.length) {
+            ann.polyline = [[cx - 200, cy], [cx, cy], [cx + 200, cy]];
+          }
+          // path 类型不需要 coord，删除残留
+          delete ann.coord;
+        } else if (ann.type === 'point' && (!ann.coord || !ann.coord.length)) {
+          ann.coord = [cx, cy];
+        }
         markDirty();
+        render();
+        highlightAnnCard(i);
       };
 
       const inputZoom = card.querySelector('.ann-input-zoom');
@@ -1228,14 +2051,75 @@ function renderAnnotations(items) {
       const inputX = card.querySelector('.ann-input-x');
       const inputY = card.querySelector('.ann-input-y');
       const updateCoord = () => {
-        const x = Number(inputX.value) || 0;
-        const y = Number(inputY.value) || 0;
-        ann.coord = [x, y];
+        const rawX = inputX.value.trim();
+        const rawY = inputY.value.trim();
+        if (rawX === '' && rawY === '') {
+          if (ann.type !== 'point') {
+            delete ann.coord;
+          } else {
+            ann.coord = [0, 0];
+          }
+        } else {
+          ann.coord = [Number(rawX) || 0, Number(rawY) || 0];
+        }
         markDirty();
         renderOsdOverlays();
       };
-      inputX.oninput = updateCoord;
-      inputY.oninput = updateCoord;
+      if (inputX && inputY) {
+        inputX.oninput = updateCoord;
+        inputY.oninput = updateCoord;
+      }
+
+      const taGeom = card.querySelector('.ann-input-geom');
+      if (taGeom) {
+        taGeom.onchange = e => {
+          try {
+            const parsed = JSON.parse(e.target.value);
+            if (ann.type === 'area') ann.polygon = parsed;
+            else if (ann.type === 'rect') ann.bbox = parsed;
+            else if (ann.type === 'path') ann.polyline = parsed;
+            markDirty();
+            renderOsdOverlays();
+            toast('几何坐标解析成功', 'ok');
+          } catch (err) {
+            toast('JSON 格式错误，请检查坐标括号', 'err');
+          }
+        };
+      }
+
+      const chkDash = card.querySelector('.ann-chk-dash');
+      if (chkDash) {
+        chkDash.onchange = e => {
+          ann.style = ann.style || {};
+          ann.style.dash = e.target.checked;
+          markDirty();
+          renderOsdOverlays();
+        };
+      }
+
+      const chkHatch = card.querySelector('.ann-chk-hatch');
+      if (chkHatch) {
+        chkHatch.onchange = e => {
+          ann.style = ann.style || {};
+          ann.style.hatch = e.target.checked;
+          markDirty();
+          renderOsdOverlays();
+        };
+      }
+
+      // 重新拉框或微调手柄
+      const btnEditGeom = card.querySelector('.ann-btn-edit-geom');
+      if (btnEditGeom) {
+        btnEditGeom.onclick = () => {
+          if (ann.type === 'rect') {
+            startRectDragSelect(i);
+          } else if (ann.type === 'area' || ann.type === 'path') {
+            toast('已激活顶点微调：请在大图上直接拖动蓝色控制手柄；双击手柄可删除节点', 'ok');
+            highlightAnnCard(i);
+            focusAnnotation(ann);
+          }
+        };
+      }
 
       const taDesc = card.querySelector('.ann-input-desc');
       taDesc.oninput = e => {
@@ -1249,11 +2133,22 @@ function renderAnnotations(items) {
         highlightAnnCard(i, false);
       };
 
+      // 头部操作按钮点击（根据类型分流：拉框/加点/加节点）
       card.querySelector('.ann-btn-pick').onclick = () => {
+        if (ann.type === 'rect') {
+          startRectDragSelect(i);
+          return;
+        }
         state.pickingTargetIndex = i;
         state.annotateMode = false;
         updateAnnotateModeUI();
-        toast(`已进入重采坐标模式，请在大图上点击 #${i + 1}「${ann.title || ann.id}」的新位置`, 'ok');
+        if (ann.type === 'area') {
+          toast(`已进入多边形加点模式，请在大图上连续点击以追加顶点（完成后点击顶部采点退出）`, 'ok');
+        } else if (ann.type === 'path') {
+          toast(`已进入折线加点模式，请在大图上连续点击以追加拐点（完成后点击顶部采点退出）`, 'ok');
+        } else {
+          toast(`已进入重采坐标模式，请在大图上点击 #${i + 1}「${ann.title || ann.id}」的新位置`, 'ok');
+        }
       };
 
       card.querySelector('.ann-btn-del').onclick = () => {
@@ -1272,8 +2167,8 @@ function renderAnnotations(items) {
     renderOsdOverlays();
   };
 
+  box._getList = () => list.filter(it => it.title || it.id || (it.coord && it.coord.length === 2) || it.polygon?.length || it.polyline?.length || it.bbox?.length);
   render();
-  box._getList = () => list.filter(it => it.title || it.id || (it.coord && it.coord.length === 2));
 }
 
 /* ================= 收集 & 保存 ================= */
@@ -1371,20 +2266,118 @@ async function save() {
   }
 }
 
+/* ================= 分段 Tab 切换与表单面板 ================= */
+
+function switchTab(tabId) {
+  const tabsNav = $('#formTabs');
+  if (!tabsNav) return;
+  const targetBtn = tabsNav.querySelector(`.form-tab-btn[data-tab="${tabId}"]`);
+  const targetPanel = $(`#${tabId}`);
+  if (!targetBtn || !targetPanel) return;
+
+  tabsNav.querySelectorAll('.form-tab-btn').forEach(b => b.classList.remove('active'));
+  $$('.tab-panel').forEach(p => p.classList.remove('active'));
+
+  targetBtn.classList.add('active');
+  targetPanel.classList.add('active');
+  state.activeTab = tabId;
+
+  const formPane = $('#formPane');
+  if (formPane) {
+    formPane.classList.toggle('tab-raw-active', tabId === 'tabRaw');
+  }
+
+  if (tabId === 'tabRaw') {
+    refreshRaw();
+  }
+  regrowTextareas();
+}
+
+function bindFormTabs() {
+  const nav = $('#formTabs');
+  if (!nav) return;
+  nav.addEventListener('click', e => {
+    const btn = e.target.closest('.form-tab-btn');
+    if (!btn) return;
+    const tabId = btn.dataset.tab;
+    if (tabId) switchTab(tabId);
+  });
+}
+
 /* ================= 源码模式 ================= */
 
-function bindRaw() {
-  $('#rawBox').querySelector('summary').addEventListener('click', e => {
-    if ($('#rawBox').open) return; // 即将展开 → 生成预览
-    e.preventDefault();
-    $('#rawBox').open = true;
-    refreshRaw();
-  });
-  function refreshRaw() {
-    if (!state.current) return;
-    const { fields, body } = collectForm();
-    $('#rawText').value = MD.serializeMd(fields, body);
+function updateRawGutter() {
+  const ta = $('#rawText');
+  const gutter = $('#rawGutter');
+  const measure = $('#rawMeasure');
+  if (!ta || !gutter || !measure) return;
+
+  const text = ta.value || '';
+  const lines = text.split('\n');
+  const count = lines.length;
+
+  // 确保测量容器宽度等于 textarea 的内容区域宽度 (clientWidth - 左右 padding)
+  const cs = getComputedStyle(ta);
+  const padL = parseFloat(cs.paddingLeft) || 12;
+  const padR = parseFloat(cs.paddingRight) || 12;
+  const contentWidth = Math.max(10, ta.clientWidth - padL - padR);
+  measure.style.width = contentWidth + 'px';
+
+  // 渲染虚拟测量行
+  measure.innerHTML = lines.map(l => `<div class="code-editor-measure-line">${esc(l) || '&#8203;'}</div>`).join('');
+
+  // 同步测量高度生成行号 DOM
+  const measureDivs = measure.children;
+  const gutterHtmlArr = [];
+  for (let i = 0; i < count; i++) {
+    const h = measureDivs[i] ? measureDivs[i].offsetHeight : 19.2;
+    gutterHtmlArr.push(`<div class="code-editor-gutter-line" style="height:${h}px">${i + 1}</div>`);
   }
+  gutter.innerHTML = gutterHtmlArr.join('');
+  gutter.scrollTop = ta.scrollTop;
+}
+
+function refreshRaw() {
+  if (!state.current) return;
+  const { fields, body } = collectForm();
+  $('#rawText').value = MD.serializeMd(fields, body);
+  requestAnimationFrame(() => updateRawGutter());
+}
+
+function bindRaw() {
+  const ta = $('#rawText');
+  const gutter = $('#rawGutter');
+  if (!ta) return;
+
+  ta.addEventListener('input', () => {
+    updateRawGutter();
+  });
+
+  ta.addEventListener('scroll', () => {
+    if (gutter) gutter.scrollTop = ta.scrollTop;
+  });
+
+  if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => {
+      if (state.activeTab === 'tabRaw') {
+        updateRawGutter();
+      }
+    });
+    ro.observe(ta);
+  }
+
+  // 编程编辑器体验：按 Tab 插入两个空格缩进
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      ta.setRangeText('  ', start, end, 'end');
+      updateRawGutter();
+      markDirty();
+    }
+  });
+
   $('#btnRawRefresh').onclick = refreshRaw;
   $('#btnRawApply').onclick = () => {
     const { fields, body, ok } = MD.parseMdText($('#rawText').value);
@@ -1400,36 +2393,224 @@ function bindRaw() {
 /* ================= 设置 ================= */
 
 function openSettings() {
-  $('#cfgAtlas').value = ($('#connStatus').textContent !== '未配置路径' && $('#connStatus').textContent !== '服务异常')
-    ? $('#connStatus').textContent : '';
-  $('#settingsDlg').showModal();
+  const dlg = $('#settingsDlg');
+  if (!dlg) return;
+  const connText = ($('#connStatus')?.textContent || '').trim();
+  const inputEl = $('#cfgAtlas');
+  if (inputEl) {
+    inputEl.value = (connText !== '未配置路径' && connText !== '服务异常' && connText !== '未连接')
+      ? connText : '';
+  }
+  try {
+    if (dlg.open) dlg.close();
+    if (typeof dlg.showModal === 'function') {
+      dlg.showModal();
+    } else {
+      dlg.show();
+    }
+  } catch (err) {
+    console.error('打开设置弹窗失败:', err);
+    try { dlg.show(); } catch (_) {}
+  }
 }
 
 function bindSettings() {
-  $('#btnSettings').onclick = openSettings;
-  $('#cfgCancel').onclick = () => $('#settingsDlg').close();
-  $('#cfgSave').onclick = async () => {
-    try {
-      await api('/api/config', postBody({ atlas_core: $('#cfgAtlas').value.trim() }));
-      $('#settingsDlg').close();
-      $('#connStatus').textContent = $('#cfgAtlas').value.trim();
-      toast('配置已保存', 'ok');
-      await loadStage(state.stage);
-    } catch (e) { toast(e.message, 'err'); }
-  };
+  const btnSettings = $('#btnSettings');
+  if (btnSettings) {
+    btnSettings.onclick = openSettings;
+  }
+  // 支持直接点击红框中的路径文本修改路径
+  const connEl = $('#connStatus');
+  if (connEl) {
+    connEl.style.cursor = 'pointer';
+    connEl.title = '点击随时更换 atlas-core 路径';
+    connEl.onclick = openSettings;
+  }
+
+  const dlg = $('#settingsDlg');
+  if (dlg) {
+    // 点击背景遮罩区域自动关闭弹窗
+    dlg.addEventListener('click', e => {
+      const rect = dlg.getBoundingClientRect();
+      const inDialog = (
+        rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
+        rect.left <= e.clientX && e.clientX <= rect.left + rect.width
+      );
+      if (!inDialog) dlg.close();
+    });
+  }
+
+  const btnBrowse = $('#cfgBrowse');
+  if (btnBrowse) {
+    btnBrowse.onclick = async () => {
+      if (adapter.mode !== 'server') {
+        toast('网页模式下请使用文件系统直接授权，本地服务模式支持唤起资源管理器', 'warn');
+        return;
+      }
+      btnBrowse.disabled = true;
+      try {
+        toast('正在调起系统资源管理器，请在弹出窗口中选择 atlas-core 根目录…', 'ok');
+        const cur = ($('#cfgAtlas')?.value || '').trim();
+        const res = await adapter.browseDir(cur);
+        if (res && res.path) {
+          if ($('#cfgAtlas')) $('#cfgAtlas').value = res.path;
+          if (!res.has_pic) {
+            toast(`已选路径：${res.path}（提示：未在该目录下发现 pic/ 文件夹，请确认）`, 'err');
+          } else {
+            toast(`已选择路径：${res.path}`, 'ok');
+          }
+        }
+      } catch (e) {
+        toast(`调用资源管理器失败：${e.message}`, 'err');
+      } finally {
+        btnBrowse.disabled = false;
+      }
+    };
+  }
+
+  const btnOpenExp = $('#cfgOpenExplorer');
+  if (btnOpenExp) {
+    btnOpenExp.onclick = async () => {
+      const cur = ($('#cfgAtlas')?.value || '').trim();
+      if (!cur) return toast('请先输入或选择路径', 'err');
+      if (adapter.mode !== 'server') return toast('网页模式下无法直接打开资源管理器', 'warn');
+      try {
+        await adapter.openExplorer(cur);
+        toast('已在系统资源管理器中打开', 'ok');
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+    };
+  }
+
+  const btnCancel = $('#cfgCancel');
+  if (btnCancel && dlg) {
+    btnCancel.onclick = () => dlg.close();
+  }
+
+  const btnSave = $('#cfgSave');
+  if (btnSave) {
+    btnSave.onclick = async () => {
+      try {
+        const val = ($('#cfgAtlas')?.value || '').trim();
+        await api('/api/config', postBody({ atlas_core: val }));
+        if (dlg) dlg.close();
+        if ($('#connStatus')) $('#connStatus').textContent = val;
+        toast('配置已保存', 'ok');
+        await loadStage(state.stage);
+      } catch (e) { toast(e.message, 'err'); }
+    };
+  }
 }
 
 /* ================= 全局事件 ================= */
 
 function bindGlobalEvents() {
   bindViewer();
+  bindFormTabs();
   bindRaw();
   bindSettings();
   $('#filterInput').oninput = renderList;
+  // 监听 Alt 键按下与松开，给画布添加准星样式提示
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Alt') {
+      $('#osdWrap')?.classList.add('alt-active');
+    }
+  });
+  window.addEventListener('keyup', e => {
+    if (e.key === 'Alt') {
+      $('#osdWrap')?.classList.remove('alt-active');
+    }
+  });
+  window.addEventListener('blur', () => {
+    $('#osdWrap')?.classList.remove('alt-active');
+  });
+
   document.addEventListener('keydown', e => {
+    // Ctrl/Cmd + S 保存
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
       save();
+      return;
+    }
+
+    // Alt + 方向键：对当前选中的标注进行像素级微调（严格拦截视口平移与浏览器滚动）
+    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    if (e.altKey && arrowKeys.includes(e.key)) {
+      // 若当前焦点在可编辑表单或输入框中，不抢占键盘输入
+      const tag = (document.activeElement?.tagName || '').toLowerCase();
+      if (['input', 'textarea', 'select'].includes(tag) && !document.activeElement?.classList.contains('ann-input-x') && !document.activeElement?.classList.contains('ann-input-y')) {
+        return;
+      }
+
+      const activeCard = $('#annList .ann-card.highlight');
+      const activeIdx = activeCard ? parseInt(activeCard.dataset.idx, 10) : -1;
+      const list = $('#annList')._getList ? $('#annList')._getList() : [];
+      if (activeIdx >= 0 && list[activeIdx]) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const step = e.shiftKey ? 10 : 1;
+        let dx = 0, dy = 0;
+        if (e.key === 'ArrowLeft') dx = -step;
+        else if (e.key === 'ArrowRight') dx = step;
+        else if (e.key === 'ArrowUp') dy = -step;
+        else if (e.key === 'ArrowDown') dy = step;
+
+        const curAnn = list[activeIdx];
+        const info = state.current?.imageInfo;
+        const maxX = info ? info.width : Infinity;
+        const maxY = info ? info.height : Infinity;
+
+        if (curAnn.type === 'point' || !curAnn.type) {
+          const curX = Math.max(0, Math.min(maxX, (curAnn.coord?.[0] || 0) + dx));
+          const curY = Math.max(0, Math.min(maxY, (curAnn.coord?.[1] || 0) + dy));
+          curAnn.coord = [curX, curY];
+        } else if (curAnn.type === 'rect' && Array.isArray(curAnn.bbox) && curAnn.bbox.length === 4) {
+          curAnn.bbox[0] = Math.max(0, curAnn.bbox[0] + dx);
+          curAnn.bbox[1] = Math.max(0, curAnn.bbox[1] + dy);
+          if (curAnn.coord) {
+            curAnn.coord[0] = Math.round(curAnn.bbox[0] + curAnn.bbox[2] / 2);
+            curAnn.coord[1] = Math.round(curAnn.bbox[1] + curAnn.bbox[3] / 2);
+          }
+        } else if (curAnn.type === 'area' && Array.isArray(curAnn.polygon)) {
+          curAnn.polygon = curAnn.polygon.map(([px, py]) => [
+            Math.max(0, Math.min(maxX, px + dx)),
+            Math.max(0, Math.min(maxY, py + dy))
+          ]);
+          if (curAnn.coord) {
+            const cp = getPolygonCentroid(curAnn.polygon) || curAnn.polygon[0];
+            curAnn.coord = [cp[0], cp[1]];
+          }
+        } else if (curAnn.type === 'path' && Array.isArray(curAnn.polyline)) {
+          curAnn.polyline = curAnn.polyline.map(([px, py]) => [
+            Math.max(0, Math.min(maxX, px + dx)),
+            Math.max(0, Math.min(maxY, py + dy))
+          ]);
+          if (curAnn.coord) {
+            const mp = getPolylineMidpoint(curAnn.polyline) || curAnn.polyline[0];
+            curAnn.coord = [mp[0], mp[1]];
+          }
+        }
+
+        markDirty();
+
+        // 局部更新卡片输入框，避免整表销毁重建导致的焦点丢失与闪烁
+        const ix = activeCard.querySelector('.ann-input-x');
+        const iy = activeCard.querySelector('.ann-input-y');
+        if (ix && curAnn.coord) ix.value = curAnn.coord[0];
+        if (iy && curAnn.coord) iy.value = curAnn.coord[1];
+
+        const taGeom = activeCard.querySelector('.ann-geom-textarea');
+        if (taGeom) {
+          if (curAnn.type === 'area' && curAnn.polygon) taGeom.value = JSON.stringify(curAnn.polygon);
+          else if (curAnn.type === 'path' && curAnn.polyline) taGeom.value = JSON.stringify(curAnn.polyline);
+          else if (curAnn.type === 'rect' && curAnn.bbox) taGeom.value = JSON.stringify(curAnn.bbox);
+        }
+
+        renderOsdOverlays();
+        highlightAnnCard(activeIdx, false);
+      }
     }
   });
   window.addEventListener('beforeunload', e => {
@@ -1518,7 +2699,7 @@ function bindFormEvents() {
   makeCombo($('#physComp'));
   autoGrow($('#f_intro'), 2);
   $('#formScroll').addEventListener('input', e => {
-    if (e.target.closest('#rawBox')) return;
+    if (e.target.closest('#tabRaw')) return;
     markDirty();
     if (e.target.id === 'f_date') syncYear();
     if (['physW', 'physH', 'physComp'].includes(e.target.id)) updatePhysPreview();
@@ -1561,8 +2742,12 @@ function bindFormEvents() {
     if (state.pickingTargetIndex !== null) state.pickingTargetIndex = null;
     state.annotateMode = !state.annotateMode;
     updateAnnotateModeUI();
-    if (state.annotateMode) toast('采点模式已开启：在大图上直接点击即可新增标注点位', 'ok');
-    else toast('已退出采点模式');
+    if (state.annotateMode) {
+      switchTab('tabAnnotations');
+      toast('采点模式已开启：在大图上直接点击即可新增标注点位', 'ok');
+    } else {
+      toast('已退出采点模式');
+    }
   };
 
   $('#btnAddAnn').onclick = () => {
@@ -1573,7 +2758,7 @@ function bindFormEvents() {
     const curZoom = osdViewer && osdViewer.viewport
       ? Number((osdViewer.viewport.viewportToImageZoom(osdViewer.viewport.getZoom(true))).toFixed(1)) || 2.0
       : 2.0;
-    const nextId = `ann-${(list.length + 1).toString().padStart(2, '0')}`;
+    const nextId = generateAnnId(list.length, 'point');
     list.push({
       id: nextId,
       type: 'point',
@@ -1586,7 +2771,7 @@ function bindFormEvents() {
     renderAnnotations(list);
     markDirty();
     highlightAnnCard(list.length - 1, true);
-    toast('已添加标注条目，可输入信息或点击「🎯 采点」调整位置', 'ok');
+    toast(`已添加标注 #${nextId}，可输入信息或点击「采点」调整位置`, 'ok');
   };
 
   $('#btnPromptAnn').onclick = () => {
@@ -1616,13 +2801,28 @@ ${vision}
 
 \`\`\`yaml
 annotations:
-  - id: ann-01
+  - id: 01-P
     type: point
     coord: [X, Y]
     title: 地标名称(6字以内)
     desc: 详细工程/地理说明(1~2句话)
     level: primary | accent | info
     zoomLevel: 2.2
+  - id: 02-L
+    type: path
+    polyline: [[X1, Y1], [X2, Y2], [X3, Y3]]
+    title: 路线名称
+    desc: 工程走向说明
+    level: accent
+  - id: 03-A
+    type: area
+    polygon: [[X1, Y1], [X2, Y2], [X3, Y3], [X4, Y4]]
+    title: 作业区域名称
+    desc: 重点闭合区域说明
+    level: info
+    style:
+      dash: true
+      hatch: true
 \`\`\`
 `;
     navigator.clipboard.writeText(promptText).then(() => {

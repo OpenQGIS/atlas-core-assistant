@@ -79,6 +79,59 @@ def get_pic_dir(root=None):
     return os.path.join(root, 'pic') if root else ''
 
 
+def choose_directory(initial_dir=''):
+    """调起系统原生目录选择窗口（跨平台：Tkinter -> Windows PowerShell -> macOS osascript）"""
+    initial = os.path.abspath(initial_dir) if initial_dir and os.path.exists(initial_dir) else None
+
+    # 方案 1: Tkinter（原生窗口置顶）
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes('-topmost', 1)
+        root.focus_force()
+        folder = filedialog.askdirectory(initialdir=initial, title='选择 atlas-core 项目根目录（包含 pic 文件夹）')
+        root.destroy()
+        if folder:
+            return os.path.normpath(folder)
+    except Exception:
+        pass
+
+    # 方案 2: Windows PowerShell (FolderBrowserDialog)
+    if sys.platform.startswith('win'):
+        try:
+            ps_script = (
+                "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; "
+                "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "$f.Description = '选择 atlas-core 项目根目录（包含 pic 文件夹）'; "
+                "$f.ShowNewFolderButton = $false; "
+            )
+            if initial:
+                ps_script += f"$f.SelectedPath = '{initial}'; "
+            ps_script += "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }"
+            res = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script],
+                                 capture_output=True, text=True, timeout=60)
+            chosen = res.stdout.strip()
+            if chosen:
+                return os.path.normpath(chosen)
+        except Exception:
+            pass
+
+    # 方案 3: macOS osascript
+    if sys.platform == 'darwin':
+        try:
+            res = subprocess.run(['osascript', '-e', 'POSIX path of (choose folder with prompt "选择 atlas-core 项目根目录")'],
+                                 capture_output=True, text=True, timeout=60)
+            chosen = res.stdout.strip()
+            if chosen:
+                return os.path.normpath(chosen)
+        except Exception:
+            pass
+
+    return ""
+
+
 # ---------------------------------------------------------------- 路径安全
 
 def resolve_rel(rel, root=None):
@@ -725,7 +778,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', ctype)
             self.send_header('Content-Length', str(len(data)))
-            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
             self.end_headers()
             self.wfile.write(data)
         except OSError:
@@ -771,6 +826,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({'ok': True, 'version': VERSION})
             elif path == '/api/config':
                 self.api_config_get()
+            elif path == '/api/pick_dir':
+                self.api_pick_dir(q)
+            elif path == '/api/open_explorer':
+                self.api_open_explorer(q)
             elif path == '/api/list':
                 self.api_list(q)
             elif path == '/api/item':
@@ -795,6 +854,10 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._body_json()
             if path == '/api/config':
                 self.api_config_set(payload)
+            elif path == '/api/pick_dir':
+                self.api_pick_dir(payload)
+            elif path == '/api/open_explorer':
+                self.api_open_explorer(payload)
             elif path == '/api/preview':
                 self.api_preview(payload)
             elif path == '/api/parse':
@@ -820,6 +883,49 @@ class Handler(BaseHTTPRequestHandler):
             stages[st] = {'exists': bool(d) and os.path.isdir(d)}
         self._json({'ok': True, 'atlas_core': root, 'pic_dir': pic, 'stages': stages,
                     'version': VERSION, 'port': self.server.server_address[1]})
+
+    def api_pick_dir(self, payload):
+        initial = payload.get('initial_dir', '').strip() or get_atlas_root()
+        folder = choose_directory(initial)
+        if not folder:
+            self._json({'ok': True, 'cancelled': True, 'path': ''})
+            return
+        # 若用户误选了 pic 文件夹本身，自动修正为其父级目录（atlas-core 根目录）
+        if os.path.basename(folder).lower() == 'pic' and os.path.isdir(folder):
+            parent = os.path.dirname(folder)
+            if parent:
+                folder = parent
+        pic_dir = os.path.join(folder, 'pic')
+        has_pic = os.path.isdir(pic_dir)
+        self._json({
+            'ok': True,
+            'cancelled': False,
+            'path': folder,
+            'has_pic': has_pic,
+        })
+
+    def api_open_explorer(self, payload):
+        target = payload.get('path', '').strip() or get_atlas_root()
+        if not target:
+            self._err('未指定路径')
+            return
+        if not os.path.exists(target):
+            parent = os.path.dirname(target)
+            if os.path.exists(parent):
+                target = parent
+            else:
+                self._err(f'路径不存在：{target}')
+                return
+        try:
+            if sys.platform.startswith('win'):
+                os.startfile(target)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', target])
+            else:
+                subprocess.Popen(['xdg-open', target])
+            self._json({'ok': True})
+        except Exception as e:
+            self._err(f'打开资源管理器失败：{e}', 500)
 
     def api_config_set(self, payload):
         root = str(payload.get('atlas_core', '')).strip()
