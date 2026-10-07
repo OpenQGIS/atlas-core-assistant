@@ -251,17 +251,22 @@ function enterFsSession() {
   $('#connectOverlay').hidden = true;
   $('#viewerEmpty').hidden = false;
   $('#connStatus').textContent = FSAdapter.label;
+  const btnConn = $('#btnConnect');
+  if (btnConn) {
+    btnConn.hidden = false;
+    btnConn.title = '更换已授权的本地 pic 文件夹路径';
+    const span = btnConn.querySelector('span');
+    if (span) span.textContent = '更换文件夹';
+    else btnConn.textContent = '更换文件夹';
+  }
   toast('已连接：' + FSAdapter.label, 'ok');
   loadStage(state.stage);
 }
 
 function bindConnect() {
-  const flow = async () => {
+  // pickFolder：无论之前是否连接，点击都唤起选择器重新更换/选择文件夹
+  const pickFolder = async () => {
     try {
-      if (FSAdapter.root && (await FSAdapter.ensurePerm())) {
-        enterFsSession();
-        return;
-      }
       await FSAdapter.pick();
       enterFsSession();
     } catch (e) {
@@ -269,8 +274,25 @@ function bindConnect() {
       toast((e && e.message) || String(e), 'err');
     }
   };
-  $('#btnConnect').onclick = flow;
-  $('#btnConnectBig').onclick = flow;
+
+  // 快捷恢复授权流程（用于初次进入且有历史记录时直接请求授权）
+  const restoreOrPick = async () => {
+    try {
+      if (FSAdapter.root && (await FSAdapter.ensurePerm())) {
+        enterFsSession();
+        return;
+      }
+      await pickFolder();
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      toast((e && e.message) || String(e), 'err');
+    }
+  };
+
+  // 顶部“更换文件夹”按钮：无论当前是否已连接，点击直接唤起目录选择器更换新目录
+  $('#btnConnect').onclick = pickFolder;
+  // 引导层大按钮：优先尝试恢复，无句柄则唤起选择器
+  $('#btnConnectBig').onclick = restoreOrPick;
 }
 
 function renderStageTabs() {
@@ -2419,12 +2441,18 @@ function bindSettings() {
   if (btnSettings) {
     btnSettings.onclick = openSettings;
   }
-  // 支持直接点击红框中的路径文本修改路径
+  // 支持直接点击路径文本更换路径或更换授权文件夹
   const connEl = $('#connStatus');
   if (connEl) {
     connEl.style.cursor = 'pointer';
-    connEl.title = '点击随时更换 atlas-core 路径';
-    connEl.onclick = openSettings;
+    connEl.title = '点击随时更换 atlas-core 路径或选择新文件夹';
+    connEl.onclick = () => {
+      if (adapter && adapter.mode === 'fs') {
+        $('#btnConnect')?.click();
+      } else {
+        openSettings();
+      }
+    };
   }
 
   const dlg = $('#settingsDlg');
