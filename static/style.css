@@ -91,18 +91,53 @@ body {
   border-bottom: 1px solid var(--border);
   flex: none;
 }
+#connStatus {
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+#connStatus:hover {
+  background: var(--hover);
+  border-color: var(--border2);
+  color: var(--accent);
+}
 .brand { font-weight: 700; letter-spacing: .5px; }
 .brand span { color: var(--accent); }
 .brand em { font-style: normal; font-weight: 400; color: var(--muted); font-size: 12px; }
 #stageTabs { display: flex; gap: 6px; }
 #stageTabs button {
+  position: relative;
   background: transparent; border: 1px solid transparent; color: var(--muted);
   padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12.5px;
+  display: inline-flex; align-items: center; gap: 6px;
 }
 #stageTabs button:hover { color: var(--text); border-color: var(--border); }
 #stageTabs button.active {
   color: var(--accent-dim); border-color: var(--accent-dim);
   background: var(--accent-soft);
+}
+/* 右上角非空图片指示灯 */
+.stage-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+  pointer-events: none;
+  animation: stageDotPulse 2s infinite ease-in-out;
+}
+.stage-dot.empty {
+  display: none;
+}
+@keyframes stageDotPulse {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.25); }
 }
 
 /* ---------- 三栏布局 ---------- */
@@ -156,6 +191,38 @@ body {
 #viewerBar {
   flex: none; display: flex; align-items: center; gap: 8px;
   padding: 6px 12px; border-top: 1px solid var(--border); background: var(--panel2);
+  white-space: nowrap; flex-wrap: nowrap; overflow: hidden;
+  min-height: 40px; box-sizing: border-box;
+}
+#imgMeta {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 0 1 auto; min-width: 0;
+}
+#cursorCoord {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  user-select: none;
+  display: inline-block;
+  min-width: 105px;
+  text-align: right;
+  flex: none;
+}
+#zoomLevel {
+  display: inline-block;
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+#btnAnnotateMode {
+  flex: none;
+  min-width: 88px;
+  justify-content: center;
+}
+#viewerBar .btn {
+  flex: none;
+  white-space: nowrap;
 }
 .placeholder {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -189,7 +256,213 @@ body {
   background: var(--panel); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; min-height: 0;
 }
-#formScroll { flex: 1; overflow-y: auto; padding: 12px 14px 20px; position: relative; }
+
+/* ---------- 5页 Tabs 分段导航栏 (纯 SVG · 零 Emoji) ---------- */
+.form-tabs-nav {
+  display: flex;
+  align-items: center;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 6px 0;
+  gap: 2px;
+  flex: none;
+  overflow-x: auto;
+}
+.form-tab-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  position: relative;
+  user-select: none;
+}
+.form-tab-btn .ic {
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+.form-tab-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+.form-tab-btn:hover .ic {
+  opacity: 1;
+}
+.form-tab-btn.active {
+  color: var(--accent);
+  background: var(--panel);
+  border-color: var(--border);
+  border-bottom-color: var(--panel);
+  font-weight: 600;
+  margin-bottom: -1px;
+  z-index: 2;
+}
+.form-tab-btn.active .ic {
+  opacity: 1;
+  stroke: var(--accent);
+}
+.tab-badge {
+  font-size: 10px;
+  font-family: var(--mono);
+  background: var(--accent-soft);
+  color: var(--accent-dim);
+  border: 1px solid var(--accent-dim);
+  padding: 0 5px;
+  border-radius: 8px;
+  line-height: 14px;
+}
+
+/* Tab Panel 内容显示/隐藏 */
+.tab-panel {
+  display: none;
+  animation: fadeInTab 0.18s ease forwards;
+}
+.tab-panel.active {
+  display: block;
+}
+@keyframes fadeInTab {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 当源码模式处于激活态时，右侧面板撑满 100% 垂直高度 */
+#formPane.tab-raw-active #formScroll {
+  overflow-y: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px 14px;
+}
+#formPane.tab-raw-active #formBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+#formPane.tab-raw-active #tabRaw {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.raw-panel-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+.raw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  flex: none;
+}
+.raw-head h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accent-dim);
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* 编程级源码编辑器（行号栏 + 自动换行 + 100% 满屏） */
+.code-editor-wrap {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.06);
+}
+
+.code-editor-wrap:focus-within {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 1px var(--accent-dim), inset 0 1px 3px rgba(0,0,0,.06);
+}
+
+.code-editor-gutter {
+  width: 44px;
+  flex: none;
+  background: var(--panel2);
+  border-right: 1px solid var(--border);
+  padding: 10px 0;
+  user-select: none;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
+  opacity: 0.75;
+}
+
+.code-editor-gutter-line {
+  padding-right: 8px;
+  box-sizing: border-box;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.code-editor-textarea {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  resize: none !important;
+  tab-size: 2;
+  overflow-y: auto;
+  overflow-x: hidden !important;
+  box-sizing: border-box;
+}
+
+.code-editor-measure {
+  position: absolute;
+  top: 0;
+  left: -9999px;
+  visibility: hidden;
+  pointer-events: none;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  padding: 0 12px;
+}
+
+.code-editor-measure-line {
+  margin: 0;
+  padding: 0;
+  min-height: 1.6em;
+}
+
+#formScroll { flex: 1; overflow-y: auto; padding: 14px 14px 20px; position: relative; }
 .section { margin-bottom: 18px; }
 .section h3 {
   font-size: 13px; margin: 0 0 10px; color: var(--accent-dim);
@@ -367,10 +640,25 @@ svg.ic { flex: none; vertical-align: -2px; }
 /* dialog */
 dialog {
   background: var(--panel); color: var(--text); border: 1px solid var(--border2);
-  border-radius: 10px; padding: 20px 22px; width: 460px;
+  border-radius: 10px; padding: 22px 24px; width: 520px; max-width: 92vw;
+  box-shadow: 0 12px 32px rgba(0,0,0,.35);
+  z-index: 1000;
 }
-dialog::backdrop { background: rgba(0,0,0,.35); }
-dialog h3 { margin: 0 0 12px; color: var(--accent-dim); }
+dialog:not([open]) {
+  display: none;
+}
+dialog[open] {
+  display: block;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+}
+dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px); }
+dialog h3 { margin: 0 0 14px; color: var(--accent-dim); font-size: 16px; font-weight: 600; }
+dialog .field span { font-size: 13px; font-weight: 500; }
+dialog .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
 
 /* scrollbars */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
@@ -387,55 +675,60 @@ dialog h3 { margin: 0 0 12px; color: var(--accent-dim); }
   font-weight: 600;
   box-shadow: 0 0 8px var(--accent-soft);
 }
-#cursorCoord {
-  font-family: var(--mono);
-  color: var(--muted);
-  user-select: none;
-}
 
-/* OSD 画布 Pin 覆盖物 */
+/* OSD 画布 Pin 覆盖物 - 零尺寸绝对定位锚点 */
 .osd-pin {
   position: absolute;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
   cursor: pointer;
   user-select: none;
   pointer-events: auto;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   z-index: 10;
-  transition: transform 0.15s ease;
 }
 .osd-pin:hover {
-  transform: translate(-50%, -55%) scale(1.1);
-  z-index: 20;
+  z-index: 25;
 }
 .osd-pin .pin-marker {
-  position: relative;
+  position: absolute;
+  left: -9px;
+  top: -9px;
   width: 18px;
   height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transform-origin: center center;
+  transition: transform 0.15s ease;
+  pointer-events: auto;
+}
+.osd-pin:hover .pin-marker {
+  transform: scale(1.25);
 }
 .osd-pin .pin-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--pin-color, #e05638);
+  background: var(--pin-color, #ef4444);
   border: 2px solid #ffffff;
   box-shadow: 0 1px 6px rgba(0,0,0,0.45);
   z-index: 2;
+  pointer-events: none;
 }
 .osd-pin .pin-pulse {
   position: absolute;
+  left: -2px;
+  top: -2px;
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--pin-color, #e05638);
+  background: var(--pin-color, #ef4444);
   opacity: 0.35;
   animation: pin-pulse-anim 2s infinite ease-out;
   z-index: 1;
+  pointer-events: none;
 }
 @keyframes pin-pulse-anim {
   0% { transform: scale(0.5); opacity: 0.8; }
@@ -443,7 +736,10 @@ dialog h3 { margin: 0 0 12px; color: var(--accent-dim); }
 }
 
 .osd-pin .pin-label {
-  margin-top: 2px;
+  position: absolute;
+  top: 12px;
+  left: 0;
+  transform: translateX(-50%);
   background: rgba(15, 23, 34, 0.88);
   backdrop-filter: blur(4px);
   color: #ffffff;
@@ -454,12 +750,51 @@ dialog h3 { margin: 0 0 12px; color: var(--accent-dim); }
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   border: 1px solid rgba(255,255,255,0.2);
-  pointer-events: none;
+  pointer-events: auto;
+  user-select: none;
 }
 
 .osd-pin.pin-primary { --pin-color: #ef4444; }
 .osd-pin.pin-accent { --pin-color: #3b82f6; }
 .osd-pin.pin-info { --pin-color: #10b981; }
+
+/* 几何图形浮动标签（多边形/矩形/路线） */
+.osd-shape-tag {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 12;
+}
+.osd-shape-tag .tag-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  background: rgba(15, 23, 34, 0.88);
+  backdrop-filter: blur(4px);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.2);
+  transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+.osd-shape-tag:hover .tag-label,
+.osd-shape-tag.active .tag-label {
+  background: rgba(37, 99, 235, 0.95);
+  border-color: #ffffff;
+  transform: translate(-50%, -50%) scale(1.08);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+}
+.osd-shape-tag.level-primary .tag-label { border-left: 3px solid #ef4444; }
+.osd-shape-tag.level-accent .tag-label { border-left: 3px solid #f59e0b; }
+.osd-shape-tag.level-info .tag-label { border-left: 3px solid #10b981; }
 
 /* 右侧标注卡片 */
 #secAnnotations h3 {
@@ -468,16 +803,38 @@ dialog h3 { margin: 0 0 12px; color: var(--accent-dim); }
   gap: 8px;
 }
 .ann-card {
-  background: var(--panel2);
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 8px;
-  padding: 8px 10px;
-  transition: border-color 0.18s, box-shadow 0.18s;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  transition: border-color 0.18s, box-shadow 0.18s, background-color 0.18s;
+}
+:root[data-theme="dark"] .ann-card {
+  background: #182230;
+  border-color: #2e3e54;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="dark"] .ann-card:hover {
+  border-color: #3d516d;
+}
+:root[data-theme="dark"] .ann-card input[type=text],
+:root[data-theme="dark"] .ann-card input[type=number],
+:root[data-theme="dark"] .ann-card select,
+:root[data-theme="dark"] .ann-card textarea {
+  background: #0f151d;
+  border-color: #29384c;
+}
+:root[data-theme="dark"] .ann-card input:focus,
+:root[data-theme="dark"] .ann-card select:focus,
+:root[data-theme="dark"] .ann-card textarea:focus {
+  border-color: var(--accent);
+  background: #0c1117;
 }
 .ann-card.highlight {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 4px 16px rgba(0, 0, 0, 0.4) !important;
 }
 .ann-head {
   display: flex;
@@ -529,10 +886,143 @@ dialog h3 { margin: 0 0 12px; color: var(--accent-dim); }
   min-height: 44px;
 }
 .ann-btn-del {
-  padding: 0 6px !important;
-  color: var(--muted);
+  padding: 3px 5px !important;
+  color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.25) !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+  transition: all 0.15s ease;
 }
 .ann-btn-del:hover {
-  color: var(--err);
+  color: #ffffff !important;
+  border-color: #ef4444 !important;
+  background: #ef4444 !important;
+  box-shadow: 0 1px 6px rgba(239, 68, 68, 0.35);
 }
+
+/* ================= 点、线、面大图标注与手柄体系 ================= */
+.osd-overlay-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 10;
+}
+.osd-overlay-svg .ann-svg-shape,
+.osd-overlay-svg .ann-vertex-handle,
+.osd-overlay-svg .ann-mid-handle {
+  pointer-events: auto;
+}
+.ann-svg-shape {
+  cursor: pointer;
+  transition: stroke-width 0.15s ease, opacity 0.15s ease;
+}
+.ann-svg-shape.level-primary {
+  stroke: #ef4444;
+  fill: rgba(239, 68, 68, 0.15);
+}
+.ann-svg-shape.level-accent {
+  stroke: #f59e0b;
+  fill: rgba(245, 158, 11, 0.16);
+}
+.ann-svg-shape.level-info {
+  stroke: #10b981;
+  fill: rgba(16, 185, 129, 0.15);
+}
+.ann-svg-shape.has-hatch {
+  fill: url(#annHatchPattern);
+}
+.ann-svg-shape.is-dash {
+  stroke-dasharray: 6 4;
+}
+.ann-svg-shape:hover, .ann-svg-shape.active {
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* 顶点控制拖拽手柄 */
+.ann-vertex-handle {
+  fill: #ffffff;
+  stroke: #2563eb;
+  stroke-width: 2px;
+  cursor: crosshair;
+  transition: transform 0.12s ease, fill 0.12s ease;
+}
+.ann-vertex-handle:hover, .ann-vertex-handle.dragging {
+  fill: #f59e0b;
+  stroke: #ffffff;
+  transform: scale(1.35);
+}
+.ann-mid-handle {
+  fill: rgba(255, 255, 255, 0.65);
+  stroke: #2563eb;
+  stroke-width: 1.5px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.ann-mid-handle:hover {
+  opacity: 1;
+  fill: #10b981;
+}
+
+/* 可拖拽移动的 Pin 点位 */
+.osd-pin.is-draggable {
+  cursor: grab;
+  user-select: none;
+}
+.osd-pin.is-dragging {
+  cursor: grabbing !important;
+  opacity: 0.95;
+  z-index: 30;
+}
+.osd-pin.is-dragging .pin-marker {
+  transform: scale(1.3);
+}
+
+/* 鼠标拉框选择的半透明橡皮筋 */
+.osd-rubberband-box {
+  position: absolute;
+  border: 2px dashed #f59e0b;
+  background: rgba(245, 158, 11, 0.18);
+  pointer-events: none;
+  z-index: 99;
+  display: none;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+/* 顶点/几何多边形属性行 */
+.ann-geom-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  border: 1px dashed var(--border);
+}
+.ann-geom-row .geom-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ann-geom-row textarea {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+/* Alt 键辅助状态：大图与画布显示精准准星 */
+#osdWrap.alt-active,
+#osdWrap.alt-active .openseadragon-canvas,
+#osdWrap.alt-active canvas {
+  cursor: crosshair !important;
+}
+
 
